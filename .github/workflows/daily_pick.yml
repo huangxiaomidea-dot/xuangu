@@ -2,9 +2,10 @@ name: A股每日选股
 
 on:
   schedule:
-    # 北京时间 15:05 = UTC 07:05（收盘后5分钟，数据更完整）
-    - cron: '5 7 * * 1-5'
-  workflow_dispatch:   # 允许手动触发
+    # 北京时间 17:00 = UTC 09:00
+    # BaoStock 收盘后约1~2小时数据才完整入库，17:00 运行最稳定
+    - cron: '0 9 * * 1-5'
+  workflow_dispatch:
 
 jobs:
   pick:
@@ -23,43 +24,37 @@ jobs:
           cache: pip
 
       - name: 安装依赖
-        run: pip install baostock pandas numpy flask flask-cors
+        run: pip install baostock pandas numpy
 
       - name: 运行选股
         id: picker
         run: |
           python picker.py
-          # 检查是否有今日结果文件（非交易日会跳过，不会有输出文件）
-          TODAY=$(date -u +%Y%m%d)
-          if ls output/result_${TODAY}.json 2>/dev/null; then
+          TODAY=$(TZ='Asia/Shanghai' date +%Y%m%d)
+          if [ -f "output/result_${TODAY}.json" ]; then
             echo "has_result=true" >> $GITHUB_OUTPUT
+            echo "今日选股完成，结果文件：output/result_${TODAY}.json"
           else
             echo "has_result=false" >> $GITHUB_OUTPUT
-            echo "今日无选股结果（可能是非交易日），跳过后续步骤"
+            echo "未生成结果文件，可能是非交易日，跳过后续步骤"
           fi
 
-      - name: 发送邮件
-        if: steps.picker.outputs.has_result == 'true'
-        env:
-          SMTP_HOST: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          MAIL_TO:   ${{ secrets.MAIL_TO }}
-        run: python mailer.py
-
-      - name: 更新网站数据（推送到 gh-pages）
+      - name: 发布到 gh-pages
         if: steps.picker.outputs.has_result == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # 暂存当前 output 目录
+          cp -r output /tmp/output_new
+
           git fetch origin gh-pages
           git checkout gh-pages
 
-          # 从当前分支取最新 output
-          git checkout origin/${{ github.ref_name }} -- output/
+          # 覆盖 output 目录
+          mkdir -p output
+          cp -r /tmp/output_new/. output/
 
           git add output/
-          git diff --cached --quiet || git commit -m "自动更新选股数据 $(date '+%Y-%m-%d')"
+          git diff --cached --quiet || git commit -m "自动更新选股数据 $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M')"
           git push origin gh-pages

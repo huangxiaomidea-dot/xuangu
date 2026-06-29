@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 A股每日选股工具
-候选池：沪深300 + 中证500 成分股（约800支，流动性好）
+候选池：沪深300 + 中证500 + 上证50 成分股（约800支，流动性好）
 评分维度：均线/量能/MACD/RSI/KDJ/尾盘/布林带（满分100）
+数据源：BaoStock（A股免费历史行情接口）
 """
 
 import json
@@ -28,9 +29,9 @@ log = logging.getLogger(__name__)
 OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-MIN_PRICE   = 3.0    # 最低股价（元）
-MAX_PRICE   = 300.0  # 最高股价（元）
-HISTORY_DAYS = 90    # 获取历史数据天数
+MIN_PRICE    = 3.0    # 最低股价（元）
+MAX_PRICE    = 300.0  # 最高股价（元）
+HISTORY_DAYS = 90     # 拉取历史天数（日历天，实际交易日约60个）
 
 # ─── 技术指标 ──────────────────────────────────────────────────
 
@@ -67,6 +68,10 @@ def boll(close, n=20):
 # ─── 评分（满分100） ────────────────────────────────────────────
 
 def score_stock(df: pd.DataFrame) -> dict | None:
+    """
+    技术指标评分，输入前复权数据（adjustflag=2），确保相对关系正确。
+    返回 {"score": int, "details": dict}
+    """
     if len(df) < 30:
         return None
 
@@ -75,11 +80,11 @@ def score_stock(df: pd.DataFrame) -> dict | None:
     ma10 = sma(c, 10)
     ma20 = sma(c, 20)
     dif, dea, hist = macd(c)
-    r   = rsi(c)
+    r    = rsi(c)
     _, _, j = kdj(h, l, c)
     bu, bm, bl = boll(c)
 
-    i = -1
+    i     = -1
     score = 0
     details: dict = {}
 
@@ -103,7 +108,7 @@ def score_stock(df: pd.DataFrame) -> dict | None:
         score += 20
     elif cross or improve:
         score += 10
-    details["MACD金叉"]  = cross
+    details["MACD金叉"]   = cross
     details["MACD柱改善"] = improve
 
     # RSI 10分
@@ -120,7 +125,7 @@ def score_stock(df: pd.DataFrame) -> dict | None:
         score += 10
     details["KDJ_J"] = round(jv, 1) if jv is not None else None
 
-    # 尾盘强势 15分（收盘/最高）
+    # 尾盘强势 15分（收盘 / 最高价）
     strength = float(c.iloc[i] / h.iloc[i]) if h.iloc[i] > 0 else 0
     if strength >= 0.95:
         score += 15
@@ -129,8 +134,9 @@ def score_stock(df: pd.DataFrame) -> dict | None:
     details["尾盘强度"] = round(strength, 3)
 
     # 布林带位置 10分
-    bv_u, bv_m, bv_l = float(bu.iloc[i]), float(bm.iloc[i]), float(bl.iloc[i])
-    if not any(np.isnan([bv_u, bv_m, bv_l])) and bv_u > bv_l:
+    bv_u = float(bu.iloc[i])
+    bv_l = float(bl.iloc[i])
+    if not any(np.isnan([bv_u, bv_l])) and bv_u > bv_l:
         pos = (c.iloc[i] - bv_l) / (bv_u - bv_l)
         if 0.4 <= pos <= 0.85:
             score += 10
@@ -148,111 +154,114 @@ def bs_login():
         raise RuntimeError(f"BaoStock登录失败: {lg.error_msg}")
 
 
-def _query_all(rs) -> list:
+def _drain(rs) -> list:
     rows = []
     while rs.error_code == "0" and rs.next():
         rows.append(rs.get_row_data())
     return rows
 
 
+def get_latest_trading_day() -> str | None:
+    """返回最近已收盘的交易日（yyyy-mm-dd）"""
+    today = datetime.today()
+    start = (today - timedelta(days=10)).strftime("%Y-%m-%d")
+    end   = today.strftime("%Y-%m-%d")
+    rs    = bs.query_trade_dates(start_date=start, end_date=end)
+    trade_days = [r[0] for r in _drain(rs) if r[1] == "1"]
+    return trade_days[-1] if trade_days else None
+
+
 def get_index_pool() -> dict[str, str]:
     """
-    返回 {code: name}，来源：沪深300 + 中证500 + 创业板50
-    约 800 支，已是 A 股最具流动性的股票，无需再过滤
+    返回 {code: name}
+    来源：沪深300 + 中证500 + 上证50，约 800 支高流动性股票
     """
     pool: dict[str, str] = {}
-
-    for fetcher in [bs.query_hs300_stocks, bs.query_zz500_stocks, bs.query_sz50_stocks]:
+    for fetcher in (bs.query_hs300_stocks, bs.query_zz500_stocks, bs.query_sz50_stocks):
         rs = fetcher()
-        for row in _query_all(rs):
-            # 字段：updateDate, code, code_name, ...
+        for row in _drain(rs):
             if len(row) >= 3:
-                pool[row[1]] = row[2]
-
+                pool[row[1]] = row[2]   # code -> code_name
     log.info(f"候选池（指数成分股）：{len(pool)} 支")
     return pool
 
 
-def get_history(code: str, start: str, end: str) -> pd.DataFrame | None:
+def _fetch_kdata(code: str, start: str, end: str, adjustflag: str) -> pd.DataFrame | None:
     fields = "date,open,high,low,close,volume,amount,pctChg"
     rs = bs.query_history_k_data_plus(
         code, fields,
         start_date=start, end_date=end,
-        frequency="d", adjustflag="2"   # 前复权
+        frequency="d", adjustflag=adjustflag,
     )
-    rows = _query_all(rs)
-    if len(rows) < 20:
+    rows = _drain(rs)
+    if not rows:
         return None
     df = pd.DataFrame(rows, columns=rs.fields)
     for col in ["open", "high", "low", "close", "volume", "amount", "pctChg"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna(subset=["close", "volume"])
-    return df if len(df) >= 20 else None
+    return df if not df.empty else None
 
-
-def get_latest_trading_day() -> str | None:
-    """查询最近一个交易日（baostock query_trade_dates）"""
-    today = datetime.today()
-    start = (today - timedelta(days=10)).strftime("%Y-%m-%d")
-    end   = today.strftime("%Y-%m-%d")
-    rs = bs.query_trade_dates(start_date=start, end_date=end)
-    rows = _query_all(rs)
-    # 字段: calendar_date, is_trading_day
-    trade_days = [r[0] for r in rows if r[1] == "1"]
-    return trade_days[-1] if trade_days else None
 
 # ─── 主流程 ────────────────────────────────────────────────────
 
 def pick_stock() -> tuple[dict, list[dict]]:
     bs_login()
     try:
-        # 确认最近交易日
         latest_day = get_latest_trading_day()
         if not latest_day:
-            raise RuntimeError("无法获取交易日历")
+            raise RuntimeError("无法获取交易日历，可能是非交易时段")
         log.info(f"最近交易日：{latest_day}")
 
-        start = (datetime.strptime(latest_day, "%Y-%m-%d") - timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d")
+        start = (
+            datetime.strptime(latest_day, "%Y-%m-%d") - timedelta(days=HISTORY_DAYS)
+        ).strftime("%Y-%m-%d")
 
-        # 候选池
         pool = get_index_pool()
         if not pool:
             raise RuntimeError("候选池为空")
 
-        log.info(f"开始对 {len(pool)} 支股票评分...")
+        log.info(f"开始对 {len(pool)} 支股票取数评分...")
         results = []
         skipped = 0
 
         for idx, (code, name) in enumerate(pool.items(), 1):
-            df = get_history(code, start, latest_day)
-            if df is None or df.empty:
+            # ① 不复权数据 → 用于展示真实价格和涨跌幅
+            df_raw = _fetch_kdata(code, start, latest_day, adjustflag="3")
+            # ② 前复权数据 → 用于技术指标计算（相对关系更准确）
+            df_adj = _fetch_kdata(code, start, latest_day, adjustflag="2")
+
+            if df_raw is None or df_adj is None or len(df_adj) < 20:
                 skipped += 1
                 continue
+
+            last = df_raw.iloc[-1]
+            price = float(last["close"])
+            chg   = float(last["pctChg"]) if not pd.isna(last["pctChg"]) else 0.0
+            amt   = float(last["amount"]) if not pd.isna(last["amount"]) else 0.0
+            date  = str(last["date"])
 
             # 价格过滤
-            last_close = float(df["close"].iloc[-1])
-            if not (MIN_PRICE <= last_close <= MAX_PRICE):
+            if not (MIN_PRICE <= price <= MAX_PRICE):
+                skipped += 1
+                continue
+            # 跌停/涨停过滤（不选当日已涨跌停股票）
+            if abs(chg) >= 9.5:
                 skipped += 1
                 continue
 
-            # 跌停/涨停 过滤（涨跌幅超过9.5%的不选）
-            last_chg = float(df["pctChg"].iloc[-1]) if not pd.isna(df["pctChg"].iloc[-1]) else 0
-            if abs(last_chg) >= 9.5:
-                skipped += 1
-                continue
-
-            res = score_stock(df)
+            res = score_stock(df_adj)
             if res is None:
                 skipped += 1
                 continue
 
-            last_amount = float(df["amount"].iloc[-1]) if not pd.isna(df["amount"].iloc[-1]) else 0
             results.append({
                 "code":       code,
                 "name":       name,
-                "price":      round(last_close, 2),
-                "change_pct": round(last_chg, 2),
-                "amount":     last_amount,
+                "price":      round(price, 2),
+                "change_pct": round(chg, 2),
+                "amount":     amt,
+                "date":       date,
                 **res,
             })
 
@@ -264,7 +273,7 @@ def pick_stock() -> tuple[dict, list[dict]]:
         if not results:
             raise RuntimeError("没有符合条件的股票，可能是非交易日或数据暂时不可用")
 
-        df_r = pd.DataFrame(results).sort_values("score", ascending=False)
+        df_r  = pd.DataFrame(results).sort_values("score", ascending=False)
         best  = df_r.iloc[0].to_dict()
         top10 = df_r.head(10).to_dict("records")
         log.info(f"推荐：{best['name']}（{best['code']}）评分 {best['score']}/100")
@@ -273,44 +282,48 @@ def pick_stock() -> tuple[dict, list[dict]]:
     finally:
         bs.logout()
 
-# ─── HTML 报告 ─────────────────────────────────────────────────
+
+# ─── 生成报告 ──────────────────────────────────────────────────
 
 def generate_report(best: dict, top10: list[dict]) -> str:
-    date_str = datetime.now().strftime("%Y年%m月%d日")
-    time_str = datetime.now().strftime("%H:%M")
-    today    = datetime.now().strftime("%Y%m%d")
+    now      = datetime.now()
+    date_str = now.strftime("%Y年%m月%d日")
+    time_str = now.strftime("%H:%M")
+    today    = now.strftime("%Y%m%d")
 
     def fmt(v):
         if isinstance(v, bool):
             return "✅" if v else "❌"
-        if isinstance(v, float) and not isinstance(v, bool):
+        if isinstance(v, float):
             return f"{v:.2f}"
         return str(v) if v is not None else "—"
 
-    details_rows = "".join(
+    det_rows = "".join(
         f"<tr><td>{k}</td><td>{fmt(v)}</td></tr>"
         for k, v in best.get("details", {}).items()
     )
-    top10_rows = ""
+
     medals = ["🥇", "🥈", "🥉"]
+    top10_rows = ""
     for i, s in enumerate(top10, 1):
-        chg = s.get("change_pct", 0) or 0
-        cls = "up" if chg >= 0 else "dn"
-        badge = medals[i - 1] if i <= 3 else f"#{i}"
-        bg = " class=\"highlight\"" if i == 1 else ""
-        code_clean = s["code"].replace("sh.", "").replace("sz.", "")
+        chg     = s.get("change_pct", 0) or 0
+        cls     = "up" if chg >= 0 else "dn"
+        badge   = medals[i - 1] if i <= 3 else f"#{i}"
+        hi      = ' class="highlight"' if i == 1 else ""
+        code_c  = s["code"].replace("sh.", "").replace("sz.", "")
         top10_rows += (
-            f"<tr{bg}><td>{badge}</td>"
-            f"<td><b>{s['name']}</b><br><small>{code_clean}</small></td>"
+            f"<tr{hi}><td>{badge}</td>"
+            f"<td><b>{s['name']}</b><br><small>{code_c}</small></td>"
             f"<td>¥{float(s['price']):.2f}</td>"
-            f"<td class=\"{cls}\">{chg:+.2f}%</td>"
+            f'<td class="{cls}">{chg:+.2f}%</td>'
             f"<td><b>{s['score']}</b>分</td></tr>"
         )
 
-    score     = best["score"]
-    chg       = best.get("change_pct", 0) or 0
-    chg_cls   = "up" if chg >= 0 else "dn"
-    code_clean = best["code"].replace("sh.", "").replace("sz.", "")
+    score    = best["score"]
+    chg      = best.get("change_pct", 0) or 0
+    chg_cls  = "up" if chg >= 0 else "dn"
+    code_c   = best["code"].replace("sh.", "").replace("sz.", "")
+    data_date = best.get("date", "")
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -348,14 +361,14 @@ tr.highlight td{{background:#fff8f8}}
 <div class="wrap">
   <div class="hd">
     <h1>📈 A股每日选股推荐</h1>
-    <p>{date_str} · {time_str} 生成</p>
+    <p>数据日期：{data_date} · {time_str} 生成</p>
   </div>
   <div class="card">
     <h2>今日推荐</h2>
     <div class="hero">
       <div>
         <div class="hero-name">{best["name"]}</div>
-        <div class="hero-code">{code_clean}</div>
+        <div class="hero-code">{code_c}</div>
       </div>
       <div>
         <div class="hero-price">¥{float(best["price"]):.2f}</div>
@@ -369,12 +382,12 @@ tr.highlight td{{background:#fff8f8}}
   </div>
   <div class="card">
     <h2>评分明细</h2>
-    <table><tr><th>指标</th><th>状态</th></tr>{details_rows}</table>
+    <table><tr><th>指标</th><th>状态</th></tr>{det_rows}</table>
   </div>
   <div class="card">
     <h2>今日 Top 10</h2>
     <table>
-      <tr><th>排名</th><th>股票</th><th>现价</th><th>涨跌幅</th><th>评分</th></tr>
+      <tr><th>排名</th><th>股票</th><th>收盘价</th><th>涨跌幅</th><th>评分</th></tr>
       {top10_rows}
     </table>
   </div>
@@ -383,19 +396,21 @@ tr.highlight td{{background:#fff8f8}}
 </body>
 </html>"""
 
-    generated_at = datetime.now().isoformat()
+    generated_at = now.isoformat()
+    result = {"best": best, "top10": top10, "generated_at": generated_at}
+
     (OUTPUT_DIR / f"report_{today}.html").write_text(html, encoding="utf-8")
     (OUTPUT_DIR / "latest.html").write_text(html, encoding="utf-8")
-    result = {
-        "best": best,
-        "top10": top10,
-        "generated_at": generated_at,
-    }
-    json_path = OUTPUT_DIR / f"result_{today}.json"
-    json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    (OUTPUT_DIR / "latest.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    log.info(f"报告已生成：{json_path}")
-    return str(OUTPUT_DIR / f"report_{today}.html")
+    (OUTPUT_DIR / f"result_{today}.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    (OUTPUT_DIR / "latest.json").write_text(
+        json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    path = str(OUTPUT_DIR / f"report_{today}.html")
+    log.info(f"报告已生成：{path}")
+    return path
 
 
 # ─── 入口 ──────────────────────────────────────────────────────
@@ -406,15 +421,15 @@ def run():
         best, top10 = pick_stock()
     except RuntimeError as e:
         msg = str(e)
-        if "没有符合条件" in msg or "非交易日" in msg or "数据暂时不可用" in msg:
-            log.warning(f"跳过：{msg}")
+        if any(k in msg for k in ["没有符合条件", "非交易", "数据暂时不可用", "交易日历"]):
+            log.warning(f"跳过本次运行：{msg}")
             sys.exit(0)
         raise
     path = generate_report(best, top10)
     chg  = best.get("change_pct", 0) or 0
     print(f"\n✅ 推荐完成！")
     print(f"   今日推荐：{best['name']}（{best['code']}）")
-    print(f"   现价：¥{float(best['price']):.2f}  涨跌：{chg:+.2f}%")
+    print(f"   收盘价：¥{float(best['price']):.2f}  涨跌：{chg:+.2f}%")
     print(f"   综合评分：{best['score']}/100")
     print(f"   报告路径：{path}\n")
 
