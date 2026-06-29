@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A股每日选股 · 次日开盘上涨预测</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f0f2f5;color:#222;min-height:100vh}
+.wrap{max-width:900px;margin:0 auto;padding:24px 16px}
+.hd{text-align:center;margin-bottom:28px}
+.hd h1{font-size:1.7rem;color:#c0392b;margin-bottom:6px;letter-spacing:1px}
+.hd p{color:#888;font-size:.88rem}
+.card{background:#fff;border-radius:14px;box-shadow:0 2px 16px rgba(0,0,0,.07);padding:24px;margin-bottom:18px}
+.card-title{font-size:1rem;font-weight:700;color:#333;margin-bottom:18px;border-left:4px solid #c0392b;padding-left:10px}
+.btn-run{display:block;width:100%;padding:14px;background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;font-size:1.05rem;font-weight:700;border:none;border-radius:10px;cursor:pointer;letter-spacing:2px;transition:.2s}
+.btn-run:hover{opacity:.9;transform:translateY(-1px)}
+.btn-run:disabled{background:#ccc;cursor:not-allowed;transform:none}
+.progress-wrap{margin-top:16px;display:none}
+.progress-bar{height:10px;background:#eee;border-radius:5px;overflow:hidden;margin-bottom:8px}
+.progress-fill{height:100%;background:linear-gradient(90deg,#f39c12,#e74c3c);border-radius:5px;width:0%;transition:width .4s}
+.progress-text{font-size:.83rem;color:#888;text-align:center;min-height:20px}
+.hero{display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:8px 0}
+.hero-left .name{font-size:2.2rem;font-weight:800;color:#c0392b;line-height:1.1}
+.hero-left .code{font-size:.9rem;color:#aaa;margin-top:4px}
+.hero-right .price{font-size:1.8rem;font-weight:700;color:#222}
+.hero-right .chg{font-size:1.1rem;margin-top:4px}
+.up{color:#e74c3c}.dn{color:#27ae60}
+.score-section{margin-top:20px}
+.score-label{font-size:.85rem;color:#666;margin-bottom:8px}
+.score-bar{height:16px;background:#f0f0f0;border-radius:8px;overflow:hidden}
+.score-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,#f39c12,#e74c3c);transition:width .8s ease}
+.score-num{font-size:1.4rem;font-weight:700;color:#c0392b;margin-left:8px}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px;margin-top:4px}
+.detail-item{background:#fafafa;border-radius:8px;padding:10px 12px;border:1px solid #f0f0f0}
+.detail-item .di-label{font-size:.75rem;color:#999;margin-bottom:4px}
+.detail-item .di-val{font-size:.95rem;font-weight:600}
+.di-val.ok{color:#27ae60}.di-val.bad{color:#ccc}.di-val.num{color:#2980b9}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th{background:#f8f8f8;padding:10px 8px;text-align:left;color:#666;font-weight:600;border-bottom:2px solid #eee;white-space:nowrap}
+td{padding:10px 8px;border-bottom:1px solid #f5f5f5;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr.hl td{background:#fff8f8}
+.rank-badge{display:inline-block;width:24px;height:24px;border-radius:50%;background:#e74c3c;color:#fff;font-size:.75rem;font-weight:700;line-height:24px;text-align:center}
+.rank-badge.s2{background:#e67e22}.rank-badge.s3{background:#95a5a6}.rank-badge.other{background:#ecf0f1;color:#888}
+.mini-bar{height:6px;background:#eee;border-radius:3px;margin-top:4px;overflow:hidden}
+.mini-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#f39c12,#e74c3c)}
+.err-box{background:#fff5f5;border:1px solid #fcc;border-radius:8px;padding:16px;color:#c0392b;font-size:.88rem;line-height:1.7;margin-top:12px}
+.disclaimer{font-size:.75rem;color:#bbb;text-align:center;margin-top:20px;padding:12px;background:#fffbe6;border-radius:8px;line-height:1.6}
+.gen-time{font-size:.8rem;color:#bbb;text-align:right;margin-bottom:6px}
+@media(max-width:520px){.hero{flex-direction:column;gap:12px;align-items:flex-start}.hero-left .name{font-size:1.8rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <h1>📈 A股每日选股</h1>
+    <p>基于7项技术指标评分，预测次日开盘上涨概率最大的一支股票</p>
+  </div>
+  <div class="card">
+    <button class="btn-run" id="btnRun" onclick="startPick()">🔍 开始选股分析</button>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText"></div>
+    </div>
+    <div id="errBox"></div>
+  </div>
+  <div class="card" id="cardBest" style="display:none">
+    <div class="card-title">🏆 今日推荐</div>
+    <div class="gen-time" id="genTime"></div>
+    <div id="bestContent"></div>
+  </div>
+  <div class="card" id="cardDetail" style="display:none">
+    <div class="card-title">📊 评分明细</div>
+    <div class="detail-grid" id="detailGrid"></div>
+  </div>
+  <div class="card" id="cardTop10" style="display:none">
+    <div class="card-title">📋 今日 Top 10</div>
+    <div style="overflow-x:auto">
+      <table><thead><tr><th>排名</th><th>股票</th><th>现价</th><th>涨跌幅</th><th>评分</th></tr></thead>
+      <tbody id="top10Body"></tbody></table>
+    </div>
+  </div>
+  <div class="disclaimer">⚠️ 本工具仅供学习与参考，不构成任何投资建议。股市有风险，投资需谨慎。</div>
+</div>
+<script>
+function ema(a,n){const k=2/(n+1),r=a.map(()=>NaN);let s=a.findIndex(v=>!isNaN(v));if(s<0)return r;r[s]=a[s];for(let i=s+1;i<a.length;i++)r[i]=isNaN(a[i])?NaN:a[i]*k+r[i-1]*(1-k);return r}
+function sma(a,n){return a.map((_,i)=>{if(i<n-1)return NaN;const s=a.slice(i-n+1,i+1);return s.some(isNaN)?NaN:s.reduce((x,y)=>x+y)/n})}
+function macd(c){const e12=ema(c,12),e26=ema(c,26),dif=c.map((_,i)=>e12[i]-e26[i]),dea=ema(dif,9);return{dif,dea,hist:dif.map((v,i)=>(v-dea[i])*2)}}
+function rsi(c,n=14){const r=c.map(()=>NaN);for(let i=n;i<c.length;i++){let g=0,l=0;for(let j=i-n+1;j<=i;j++){const d=c[j]-c[j-1];d>0?g+=d:l-=d}g/=n;l/=n;r[i]=l===0?100:100-100/(1+g/l)}return r}
+function kdj(h,l,c,n=9){const K=c.map(()=>NaN),D=c.map(()=>NaN),J=c.map(()=>NaN);for(let i=n-1;i<c.length;i++){const lo=Math.min(...l.slice(i-n+1,i+1)),hi=Math.max(...h.slice(i-n+1,i+1)),rsv=hi===lo?50:(c[i]-lo)/(hi-lo)*100;K[i]=i===n-1?rsv:rsv/3+K[i-1]*2/3;D[i]=i===n-1?K[i]:K[i]/3+D[i-1]*2/3;J[i]=3*K[i]-2*D[i]}return{K,D,J}}
+function boll(c,n=20){const mid=sma(c,n),u=c.map(()=>NaN),lo=c.map(()=>NaN);for(let i=n-1;i<c.length;i++){const sl=c.slice(i-n+1,i+1),m=mid[i],std=Math.sqrt(sl.reduce((s,v)=>s+(v-m)**2,0)/n);u[i]=m+2*std;lo[i]=m-2*std}return{upper:u,mid,lower:lo}}
+
+function scoreStock(ks){
+  if(ks.length<30)return null;
+  const C=ks.map(k=>k.c),H=ks.map(k=>k.h),L=ks.map(k=>k.l),V=ks.map(k=>k.v),i=C.length-1;
+  const ma5=sma(C,5),ma10=sma(C,10),ma20=sma(C,20),{dif,dea,hist}=macd(C),r=rsi(C),{J}=kdj(H,L,C),{upper,lower}=boll(C);
+  let score=0;const det={};
+  const bull=C[i]>ma5[i]&&ma5[i]>ma10[i]&&ma10[i]>ma20[i];if(bull)score+=20;det['均线多头排列']={v:bull,t:'b'};
+  const v5=V.slice(Math.max(0,i-5),i).reduce((a,b)=>a+b,0)/5,surge=V[i]>v5*1.5;if(surge)score+=15;det['量能放大']={v:surge,t:'b'};
+  const cross=dif[i]>dea[i],imp=hist[i]>hist[i-1];if(cross&&imp)score+=20;else if(cross||imp)score+=10;
+  det['MACD金叉']={v:cross,t:'b'};det['MACD柱改善']={v:imp,t:'b'};
+  const rv=r[i],rOk=!isNaN(rv)&&rv>=40&&rv<=70;if(rOk)score+=10;det['RSI(14)']={v:isNaN(rv)?'—':rv.toFixed(1),t:'n',ok:rOk};
+  const jv=J[i],jOk=!isNaN(jv)&&jv>=20&&jv<=85&&jv>J[i-1];if(jOk)score+=10;det['KDJ_J']={v:isNaN(jv)?'—':jv.toFixed(1),t:'n',ok:jOk};
+  const st=H[i]>0?C[i]/H[i]:0;if(st>=0.95)score+=15;else if(st>=0.9)score+=7;det['尾盘强度']={v:(st*100).toFixed(1)+'%',t:'n',ok:st>=0.95};
+  const bu=upper[i],bl=lower[i];if(!isNaN(bu)&&bu>bl){const pos=(C[i]-bl)/(bu-bl);if(pos>=0.4&&pos<=0.85)score+=10;else if(pos>=0.2)score+=5;det['布林带位置']={v:(pos*100).toFixed(0)+'%',t:'n',ok:pos>=0.4&&pos<=0.85}}
+  return{score,det};
+}
+
+const PROXIES=[
+  u=>`https://corsproxy.io/?${encodeURIComponent(u)}`,
+  u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u=>`https://cors.eu.org/${u}`,
+];
+async function fetchJ(url){
+  let lastErr;
+  for(const px of PROXIES){
+    try{
+      const r=await fetch(px(url),{signal:AbortSignal.timeout(9000)});
+      if(!r.ok)continue;
+      const t=await r.text();
+      if(!t||t.length<20)continue;
+      return JSON.parse(t);
+    }catch(e){lastErr=e}
+  }
+  throw lastErr||new Error('网络请求失败');
+}
+
+async function getStockList(){
+  const url='https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=80&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f6&fs=m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23&fields=f2,f3,f6,f12,f13,f14';
+  const data=await fetchJ(url);
+  const diff=data?.data?.diff;
+  if(!diff?.length)throw new Error('行情列表数据为空，东方财富API可能暂时限制，请稍后重试');
+  return diff.filter(s=>s.f2>=3&&s.f2<=200&&Math.abs(s.f3)<9.5&&!(s.f14||'').includes('ST')&&!(s.f14||'').includes('退'))
+    .map(s=>({code:s.f12,name:s.f14,price:s.f2,chg:s.f3,amount:s.f6,mkt:s.f13}));
+}
+
+async function getKlines(s){
+  const url=`https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${s.mkt}.${s.code}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&lmt=65`;
+  const data=await fetchJ(url);
+  return(data?.data?.klines||[]).map(line=>{const p=line.split(',');return{c:+p[2],h:+p[3],l:+p[4],v:+p[5]}}).filter(k=>k.c>0);
+}
+
+function setProgress(pct,text){document.getElementById('progressFill').style.width=pct+'%';document.getElementById('progressText').textContent=text}
+function showErr(msg){document.getElementById('errBox').innerHTML=`<div class="err-box">❌ ${msg}<br><small>提示：部分CORS代理在中国大陆访问较慢，建议使用VPN或稍后重试。</small></div>`}
+
+function renderBest(b){
+  const sign=b.chg>=0?'+':'',cls=b.chg>=0?'up':'dn';
+  document.getElementById('genTime').textContent='生成时间：'+new Date().toLocaleString('zh-CN');
+  document.getElementById('bestContent').innerHTML=`<div class="hero"><div class="hero-left"><div class="name">${b.name}</div><div class="code">${b.mkt===1?'SH':'SZ'} · ${b.code}</div></div><div class="hero-right"><div class="price">¥${b.price.toFixed(2)}</div><div class="chg ${cls}">${sign}${b.chg.toFixed(2)}%</div></div></div><div class="score-section"><div class="score-label">综合评分 <span class="score-num">${b.score}</span> / 100</div><div class="score-bar"><div class="score-fill" id="sf" style="width:0%"></div></div></div>`;
+  document.getElementById('cardBest').style.display='';
+  setTimeout(()=>{document.getElementById('sf').style.width=b.score+'%'},80);
+}
+function renderDetail(det){
+  document.getElementById('detailGrid').innerHTML=Object.entries(det).map(([k,v])=>{let val,cls;if(v.t==='b'){val=v.v?'✅ 是':'❌ 否';cls=v.v?'ok':'bad'}else{val=v.v;cls=v.ok?'ok':'num'}return`<div class="detail-item"><div class="di-label">${k}</div><div class="di-val ${cls}">${val}</div></div>`}).join('');
+  document.getElementById('cardDetail').style.display='';
+}
+function renderTop10(list){
+  document.getElementById('top10Body').innerHTML=list.map((s,idx)=>{const r=idx+1,badge=r<=3?`<span class="rank-badge ${r===2?'s2':r===3?'s3':''}">${r}</span>`:`<span class="rank-badge other">${r}</span>`,sign=s.chg>=0?'+':'',cls=s.chg>=0?'up':'dn';return`<tr class="${idx===0?'hl':''}"><td>${badge}</td><td><b>${s.name}</b><br><small style="color:#aaa">${s.code}</small></td><td>¥${s.price.toFixed(2)}</td><td class="${cls}">${sign}${s.chg.toFixed(2)}%</td><td><b>${s.score}</b>分<div class="mini-bar"><div class="mini-fill" style="width:${s.score}%"></div></div></td></tr>`}).join('');
+  document.getElementById('cardTop10').style.display='';
+}
+
+async function startPick(){
+  const btn=document.getElementById('btnRun');
+  btn.disabled=true;btn.textContent='⏳ 分析中...';
+  document.getElementById('progressWrap').style.display='';
+  document.getElementById('errBox').innerHTML='';
+  ['cardBest','cardDetail','cardTop10'].forEach(id=>document.getElementById(id).style.display='none');
+  try{
+    setProgress(3,'正在获取A股行情列表...');
+    const stocks=await getStockList();
+    setProgress(10,`获取到 ${stocks.length} 支候选股，开始评分...`);
+    const results=[];
+    for(let i=0;i<stocks.length;i++){
+      const s=stocks[i];
+      setProgress(10+Math.floor(i/stocks.length*85),`评分中 (${i+1}/${stocks.length})：${s.name}`);
+      try{const ks=await getKlines(s);const res=scoreStock(ks);if(res)results.push({...s,...res})}catch(_){}
+      await new Promise(r=>setTimeout(r,60));
+    }
+    if(!results.length)throw new Error('所有股票评分失败，可能是网络限制导致K线数据无法获取');
+    results.sort((a,b)=>b.score-a.score);
+    setProgress(100,`✅ 分析完成！共评分 ${results.length} 支股票`);
+    renderBest(results[0]);renderDetail(results[0].det);renderTop10(results.slice(0,10));
+  }catch(e){setProgress(0,'');showErr(e.message)}
+  finally{btn.disabled=false;btn.textContent='🔄 重新选股'}
+}
+</script>
+</body>
+</html>

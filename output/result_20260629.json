@@ -1,0 +1,203 @@
+{
+  "best": {
+    "code": "sh.600036",
+    "name": "招商银行",
+    "price": 42.5,
+    "change_pct": 1.23,
+    "amount": 3200000000.0,
+    "score": 75,
+    "details": {
+      "均线多头排列": true,
+      "量能放大": true,
+      "MACD金叉": true,
+      "MACD柱改善": false,
+      "RSI": 58.3,
+      "KDJ_J": 72.1,
+      "尾盘强度": 0.967,
+      "布林位置": 0.62
+    }
+  },
+  "top10": [
+    {
+      "code": "sh.600036",
+      "name": "招商银行",
+      "price": 42.5,
+      "change_pct": 1.23,
+      "amount": 3200000000.0,
+      "score": 75,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600001",
+      "name": "股票1",
+      "price": 31,
+      "change_pct": 0.5,
+      "amount": 3200000000.0,
+      "score": 72,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600002",
+      "name": "股票2",
+      "price": 32,
+      "change_pct": 1.0,
+      "amount": 3200000000.0,
+      "score": 69,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600003",
+      "name": "股票3",
+      "price": 33,
+      "change_pct": 1.5,
+      "amount": 3200000000.0,
+      "score": 66,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600004",
+      "name": "股票4",
+      "price": 34,
+      "change_pct": 2.0,
+      "amount": 3200000000.0,
+      "score": 63,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600005",
+      "name": "股票5",
+      "price": 35,
+      "change_pct": 2.5,
+      "amount": 3200000000.0,
+      "score": 60,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600006",
+      "name": "股票6",
+      "price": 36,
+      "change_pct": 3.0,
+      "amount": 3200000000.0,
+      "score": 57,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600007",
+      "name": "股票7",
+      "price": 37,
+      "change_pct": 3.5,
+      "amount": 3200000000.0,
+      "score": 54,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600008",
+      "name": "股票8",
+      "price": 38,
+      "change_pct": 4.0,
+      "amount": 3200000000.0,
+      "score": 51,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    },
+    {
+      "code": "sh.600009",
+      "name": "股票9",
+      "price": 39,
+      "change_pct": 4.5,
+      "amount": 3200000000.0,
+      "score": 48,
+      "details": {
+        "均线多头排列": true,
+        "量能放大": true,
+        "MACD金叉": true,
+        "MACD柱改善": false,
+        "RSI": 58.3,
+        "KDJ_J": 72.1,
+        "尾盘强度": 0.967,
+        "布林位置": 0.62
+      }
+    }
+  ],
+  "generated_at": "2026-06-29T03:26:43.398306"
+}
