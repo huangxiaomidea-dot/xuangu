@@ -1,0 +1,26 @@
+name: Daily Screen
+
+on:
+  schedule:
+    - cron: '40 6 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: 安装依赖
+        run: pip install -r tail-screener/requirements.txt
+      - name: 运行尾盘选股
+        run: cd tail-screener && python scripts/run_screen.py
+      - name: 上传选股报告
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: screener-report-${{ github.run_id }}
+          path: tail-screener/notes/
+          retention-days: 30
