@@ -142,22 +142,52 @@ async function getKlines(s){
 }
 
 function setProgress(pct,text){document.getElementById('progressFill').style.width=pct+'%';document.getElementById('progressText').textContent=text}
-function showErr(msg){document.getElementById('errBox').innerHTML=`<div class="err-box">❌ ${msg}<br><small>提示：部分CORS代理在中国大陆访问较慢，建议使用VPN或稍后重试。</small></div>`}
+function showErr(msg){document.getElementById('errBox').innerHTML=`<div class="err-box">❌ ${msg}<br><small>提示：建议本地运行 server.py 以获得最佳体验，或稍后重试。</small></div>`}
 
+// 统一渲染函数（兼容后端和前端两种数据格式）
 function renderBest(b){
-  const sign=b.chg>=0?'+':'',cls=b.chg>=0?'up':'dn';
+  const chg=b.chg!=null?b.chg:(b.change_pct||0);
+  const sign=chg>=0?'+':'',cls=chg>=0?'up':'dn';
+  const mktLabel=b.mkt!=null?(b.mkt===1?'SH':'SZ'):(b.code||'').startsWith('sh')?'SH':'SZ';
+  const codeClean=(b.code||'').replace(/^[a-z]+\./,'');
   document.getElementById('genTime').textContent='生成时间：'+new Date().toLocaleString('zh-CN');
-  document.getElementById('bestContent').innerHTML=`<div class="hero"><div class="hero-left"><div class="name">${b.name}</div><div class="code">${b.mkt===1?'SH':'SZ'} · ${b.code}</div></div><div class="hero-right"><div class="price">¥${b.price.toFixed(2)}</div><div class="chg ${cls}">${sign}${b.chg.toFixed(2)}%</div></div></div><div class="score-section"><div class="score-label">综合评分 <span class="score-num">${b.score}</span> / 100</div><div class="score-bar"><div class="score-fill" id="sf" style="width:0%"></div></div></div>`;
+  document.getElementById('bestContent').innerHTML=`<div class="hero"><div class="hero-left"><div class="name">${b.name}</div><div class="code">${mktLabel} · ${codeClean}</div></div><div class="hero-right"><div class="price">¥${(+b.price).toFixed(2)}</div><div class="chg ${cls}">${sign}${chg.toFixed(2)}%</div></div></div><div class="score-section"><div class="score-label">综合评分 <span class="score-num">${b.score}</span> / 100</div><div class="score-bar"><div class="score-fill" id="sf" style="width:0%"></div></div></div>`;
   document.getElementById('cardBest').style.display='';
   setTimeout(()=>{document.getElementById('sf').style.width=b.score+'%'},80);
 }
 function renderDetail(det){
-  document.getElementById('detailGrid').innerHTML=Object.entries(det).map(([k,v])=>{let val,cls;if(v.t==='b'){val=v.v?'✅ 是':'❌ 否';cls=v.v?'ok':'bad'}else{val=v.v;cls=v.ok?'ok':'num'}return`<div class="detail-item"><div class="di-label">${k}</div><div class="di-val ${cls}">${val}</div></div>`}).join('');
+  // 兼容后端格式（{key: bool/number}）和前端格式（{key: {v,t,ok}}）
+  const entries=Object.entries(det).map(([k,v])=>{
+    if(v&&typeof v==='object'&&'t' in v){
+      let val,cls;if(v.t==='b'){val=v.v?'✅ 是':'❌ 否';cls=v.v?'ok':'bad'}else{val=v.v;cls=v.ok?'ok':'num'}
+      return`<div class="detail-item"><div class="di-label">${k}</div><div class="di-val ${cls}">${val}</div></div>`;
+    }else{
+      const isB=typeof v==='boolean';
+      const val=isB?(v?'✅ 是':'❌ 否'):typeof v==='number'?v.toFixed(2):v;
+      const cls=isB?(v?'ok':'bad'):'num';
+      return`<div class="detail-item"><div class="di-label">${k}</div><div class="di-val ${cls}">${val}</div></div>`;
+    }
+  });
+  document.getElementById('detailGrid').innerHTML=entries.join('');
   document.getElementById('cardDetail').style.display='';
 }
 function renderTop10(list){
-  document.getElementById('top10Body').innerHTML=list.map((s,idx)=>{const r=idx+1,badge=r<=3?`<span class="rank-badge ${r===2?'s2':r===3?'s3':''}">${r}</span>`:`<span class="rank-badge other">${r}</span>`,sign=s.chg>=0?'+':'',cls=s.chg>=0?'up':'dn';return`<tr class="${idx===0?'hl':''}"><td>${badge}</td><td><b>${s.name}</b><br><small style="color:#aaa">${s.code}</small></td><td>¥${s.price.toFixed(2)}</td><td class="${cls}">${sign}${s.chg.toFixed(2)}%</td><td><b>${s.score}</b>分<div class="mini-bar"><div class="mini-fill" style="width:${s.score}%"></div></div></td></tr>`}).join('');
+  document.getElementById('top10Body').innerHTML=list.map((s,idx)=>{
+    const r=idx+1,badge=r<=3?`<span class="rank-badge ${r===2?'s2':r===3?'s3':''}">${r}</span>`:`<span class="rank-badge other">${r}</span>`;
+    const chg=s.chg!=null?s.chg:(s.change_pct||0),sign=chg>=0?'+':'',cls=chg>=0?'up':'dn';
+    const codeClean=(s.code||'').replace(/^[a-z]+\./,'');
+    return`<tr class="${idx===0?'hl':''}"><td>${badge}</td><td><b>${s.name}</b><br><small style="color:#aaa">${codeClean}</small></td><td>¥${(+s.price).toFixed(2)}</td><td class="${cls}">${sign}${chg.toFixed(2)}%</td><td><b>${s.score}</b>分<div class="mini-bar"><div class="mini-fill" style="width:${s.score}%"></div></div></td></tr>`;
+  }).join('');
   document.getElementById('cardTop10').style.display='';
+}
+
+// 尝试调用本地后端 API
+async function tryBackendPick(){
+  const r=await fetch('/api/pick',{signal:AbortSignal.timeout(120000)});
+  if(!r.ok)throw new Error('后端返回错误 '+r.status);
+  const data=await r.json();
+  if(data.error)throw new Error(data.error);
+  return data;
 }
 
 async function startPick(){
@@ -167,6 +197,17 @@ async function startPick(){
   document.getElementById('errBox').innerHTML='';
   ['cardBest','cardDetail','cardTop10'].forEach(id=>document.getElementById(id).style.display='none');
   try{
+    // 优先尝试后端 API（无 CORS 问题）
+    setProgress(5,'正在连接后端服务...');
+    try{
+      const data=await tryBackendPick();
+      setProgress(100,'✅ 选股完成！');
+      renderBest(data.best);renderDetail(data.best.details||{});renderTop10(data.top10||[]);
+      return;
+    }catch(backendErr){
+      // 后端不可用，降级到前端 CORS 代理模式
+      console.warn('后端不可用，切换到前端模式:',backendErr.message);
+    }
     setProgress(3,'正在获取A股行情列表...');
     const stocks=await getStockList();
     setProgress(10,`获取到 ${stocks.length} 支候选股，开始评分...`);
