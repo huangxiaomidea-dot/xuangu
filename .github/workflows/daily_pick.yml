@@ -2,8 +2,8 @@ name: A股每日选股
 
 on:
   schedule:
-    # 北京时间 14:45 = UTC 06:45
-    - cron: '45 6 * * 1-5'
+    # 北京时间 15:05 = UTC 07:05（收盘后5分钟，数据更完整）
+    - cron: '5 7 * * 1-5'
   workflow_dispatch:   # 允许手动触发
 
 jobs:
@@ -26,9 +26,20 @@ jobs:
         run: pip install baostock pandas numpy flask flask-cors
 
       - name: 运行选股
-        run: python picker.py
+        id: picker
+        run: |
+          python picker.py
+          # 检查是否有今日结果文件（非交易日会跳过，不会有输出文件）
+          TODAY=$(date -u +%Y%m%d)
+          if ls output/result_${TODAY}.json 2>/dev/null; then
+            echo "has_result=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_result=false" >> $GITHUB_OUTPUT
+            echo "今日无选股结果（可能是非交易日），跳过后续步骤"
+          fi
 
       - name: 发送邮件
+        if: steps.picker.outputs.has_result == 'true'
         env:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -38,13 +49,16 @@ jobs:
         run: python mailer.py
 
       - name: 更新网站数据（推送到 gh-pages）
+        if: steps.picker.outputs.has_result == 'true'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git fetch origin gh-pages
           git checkout gh-pages
-          git checkout origin/claude/a-stock-daily-selector-files-lp839j -- output/
+
+          # 从当前分支取最新 output
+          git checkout origin/${{ github.ref_name }} -- output/
 
           git add output/
           git diff --cached --quiet || git commit -m "自动更新选股数据 $(date '+%Y-%m-%d')"
