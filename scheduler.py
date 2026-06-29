@@ -9,7 +9,8 @@ from datetime import datetime
 
 import schedule
 
-from picker import run
+from picker import pick_stock, generate_report, run
+from mailer import send_report
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,13 @@ def job():
         log.info("今日非交易日，跳过选股")
         return
     log.info("触发每日选股任务...")
-    run()
+    try:
+        best, top10 = pick_stock()
+        generate_report(best, top10)
+        log.info(f"选股完成：{best['name']} 评分 {best['score']}")
+        send_report(best, top10)
+    except Exception as e:
+        log.error(f"选股或发送邮件失败：{e}")
 
 
 def main():
