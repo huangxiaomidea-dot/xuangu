@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>14:40 尾盘选股器</title>
+<style>
+  /* ── 基础重置 ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #1c2128;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --muted:     #7d8590;
+    --green:     #3fb950;
+    --red:       #f85149;
+    --yellow:    #d29922;
+    --blue:      #58a6ff;
+    --purple:    #bc8cff;
+    --accent:    #1f6feb;
+    --radius:    8px;
+  }
+  html, body { height: 100%; font-family: -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; }
+
+  /* ── 布局 ── */
+  .app { display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
+
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; z-index: 10;
+  }
+  header .logo { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  header .logo span { color: var(--green); font-size: 20px; }
+  header .meta { color: var(--muted); font-size: 12px; }
+
+  .main { display: grid; grid-template-columns: 260px 1fr 360px; overflow: hidden; }
+
+  /* ── 侧边栏：历史报告 ── */
+  .sidebar {
+    background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .sidebar-header { padding: 16px; font-weight: 600; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+    border-bottom: 1px solid var(--border); }
+  .report-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .report-item {
+    padding: 10px 16px; cursor: pointer; display: flex; align-items: center;
+    gap: 10px; color: var(--muted); font-size: 13px; transition: background .15s;
+  }
+  .report-item:hover { background: var(--surface2); color: var(--text); }
+  .report-item.active { background: var(--accent); color: #fff; }
+  .report-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+  .report-item.active .dot { background: #fff; }
+  .report-empty { padding: 24px 16px; color: var(--muted); font-size: 13px; text-align: center; }
+
+  /* ── 中间：结果区 ── */
+  .content { display: flex; flex-direction: column; overflow: hidden; }
+
+  .control-bar {
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px; background: var(--surface);
+    flex-shrink: 0;
+  }
+  .btn-run {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--green); color: #000; border: none; border-radius: var(--radius);
+    padding: 8px 20px; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn-run:hover:not(:disabled) { opacity: .85; }
+  .btn-run:active:not(:disabled) { transform: scale(.97); }
+  .btn-run:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-run.running { background: var(--yellow); }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--muted);
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status-dot.running { background: var(--yellow); animation: pulse 1s infinite; }
+  .status-dot.success { background: var(--green); }
+  .status-dot.error   { background: var(--red); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: .4; }
+  }
+
+  .result-area { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* ── 日期标题 ── */
+  .report-date {
+    font-size: 20px; font-weight: 700; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .report-date .badge {
+    font-size: 11px; font-weight: 500; padding: 2px 8px;
+    border-radius: 20px; background: var(--surface2); color: var(--muted);
+  }
+
+  /* ── TOP3 卡片 ── */
+  .section-title {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--muted); margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+  }
+
+  .top3-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+
+  .stock-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; position: relative;
+    transition: border-color .2s, transform .2s;
+    cursor: default;
+  }
+  .stock-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .stock-card.rank-1 { border-top: 3px solid var(--yellow); }
+  .stock-card.rank-2 { border-top: 3px solid var(--muted); }
+  .stock-card.rank-3 { border-top: 3px solid #cd7f32; }
+
+  .card-rank {
+    position: absolute; top: 12px; right: 12px;
+    font-size: 11px; font-weight: 700; color: var(--muted);
+  }
+  .card-rank.rank-1 { color: var(--yellow); }
+  .card-rank.rank-2 { color: #c0c0c0; }
+  .card-rank.rank-3 { color: #cd7f32; }
+
+  .card-code { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  .card-name { font-size: 16px; font-weight: 700; margin-bottom: 10px; }
+  .card-price { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  .card-pct { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .card-pct.up   { color: var(--red); }
+  .card-pct.down { color: var(--green); }
+
+  .card-stats { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .stat { display: flex; flex-direction: column; }
+  .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
+  .stat-value { font-size: 13px; font-weight: 600; }
+
+  .score-bar { margin-top: 12px; }
+  .score-label { display: flex; justify-content: space-between; font-size: 11px;
+    color: var(--muted); margin-bottom: 4px; }
+  .score-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .score-fill  { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--purple)); transition: width .6s ease; }
+
+  .factors-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  .factor-tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    background: var(--surface2); color: var(--blue); border: 1px solid var(--border);
+  }
+
+  /* ── TOP10 表格 ── */
+  .table-wrap { overflow-x: auto; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { background: var(--surface2); }
+  th { padding: 10px 14px; text-align: left; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .4px; color: var(--muted);
+    border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface2); }
+  .rank-num { font-weight: 700; color: var(--muted); }
+  .pct-up   { color: var(--red); font-weight: 600; }
+  .pct-down { color: var(--green); font-weight: 600; }
+
+  /* ── 空状态 ── */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 300px; color: var(--muted); gap: 12px;
+  }
+  .empty-icon { font-size: 48px; opacity: .4; }
+  .empty-text { font-size: 14px; }
+
+  /* ── 右侧：日志 ── */
+  .log-panel {
+    background: #0a0c0f; border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .log-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--muted); display: flex;
+    align-items: center; justify-content: space-between;
+  }
+  .btn-clear {
+    font-size: 11px; color: var(--muted); background: none; border: none;
+    cursor: pointer; padding: 2px 8px; border-radius: 4px;
+  }
+  .btn-clear:hover { background: var(--surface); color: var(--text); }
+  .log-body {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+    font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 12px;
+    line-height: 1.7; color: #8b949e;
+  }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-line.info  { color: #8b949e; }
+  .log-line.ok    { color: var(--green); }
+  .log-line.warn  { color: var(--yellow); }
+  .log-line.err   { color: var(--red); }
+  .log-line.head  { color: var(--blue); font-weight: bold; }
+  .log-line.web   { color: var(--purple); }
+
+  /* 滚动条美化 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- 顶栏 -->
+  <header>
+    <div class="logo"><span>📈</span> 14:40 尾盘选股器</div>
+    <div class="meta" id="meta-time">正在加载...</div>
+  </header>
+
+  <div class="main">
+
+    <!-- 左侧：历史报告列表 -->
+    <aside class="sidebar">
+      <div class="sidebar-header">历史报告</div>
+      <div class="report-list" id="report-list">
+        <div class="report-empty">暂无报告</div>
+      </div>
+    </aside>
+
+    <!-- 中间：结果展示 -->
+    <section class="content">
+      <div class="control-bar">
+        <button class="btn-run" id="btn-run" onclick="runScreener()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <span id="btn-text">立即选股</span>
+        </button>
+        <div class="status-badge">
+          <div class="status-dot" id="status-dot"></div>
+          <span id="status-text">空闲</span>
+        </div>
+        <div style="margin-left: auto; color: var(--muted); font-size: 12px;" id="last-run-time"></div>
+      </div>
+
+      <div class="result-area" id="result-area">
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-text">点击「立即选股」开始运行，或从左侧选择历史报告</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右侧：日志 -->
+    <aside class="log-panel">
+      <div class="log-header">
+        <span>运行日志</span>
+        <button class="btn-clear" onclick="clearLog()">清空</button>
+      </div>
+      <div class="log-body" id="log-body"></div>
+    </aside>
+
+  </div>
+</div>
+
+<script>
+// ── 状态 ───────────────────────────────────────────
+let currentReport = null;
+let evtSource = null;
+let pollTimer = null;
+
+// ── 工具函数 ────────────────────────────────────────
+
+function fmtPct(v) {
+  const n = parseFloat(v);
+  if (isNaN(n)) return v;
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+}
+
+function pctClass(v) {
+  return parseFloat(v) >= 0 ? 'pct-up' : 'pct-down';
+}
+
+function pctCardClass(v) {
+  return parseFloat(v) >= 0 ? 'up' : 'down';
+}
+
+// ── 日志 ────────────────────────────────────────────
+
+function logClass(line) {
+  if (line.startsWith('[web]'))       return 'web';
+  if (/✅|完成|成功/.test(line))        return 'ok';
+  if (/⚠️|警告/.test(line))           return 'warn';
+  if (/❌|失败|异常|错误/.test(line))   return 'err';
+  if (/===/.test(line))               return 'head';
+  return 'info';
+}
+
+function appendLog(text) {
+  const box = document.getElementById('log-body');
+  const div = document.createElement('div');
+  div.className = 'log-line ' + logClass(text);
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log-body').innerHTML = '';
+}
+
+// ── 渲染结果 ────────────────────────────────────────
+
+function renderReport(data) {
+  const area = document.getElementById('result-area');
+  if (!data || (!data.top3?.length && !data.top10?.length)) {
+    area.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <div class="empty-text">${data?.date || ''} 无满足条件的标的</div>
+      </div>`;
+    return;
+  }
+
+  const rankLabel = ['', '🥇', '🥈', '🥉'];
+
+  // TOP3 卡片
+  let cards = '';
+  (data.top3 || []).forEach(s => {
+    const pctStr = fmtPct(s.pct);
+    const score  = parseFloat(s.score) || 0;
+    const tags   = (s.factors || '').split('、').filter(Boolean)
+      .map(f => `<span class="factor-tag">${f}</span>`).join('');
+    cards += `
+      <div class="stock-card rank-${s.rank}">
+        <div class="card-rank rank-${s.rank}">${rankLabel[s.rank] || '#'+s.rank}</div>
+        <div class="card-code">${s.code}</div>
+        <div class="card-name">${s.name}</div>
+        <div class="card-price">¥${s.price}</div>
+        <div class="card-pct ${pctCardClass(s.pct)}">${pctStr}</div>
+        <div class="card-stats">
+          <div class="stat">
+            <div class="stat-label">振幅</div>
+            <div class="stat-value">${parseFloat(s.amp).toFixed(2)}%</div>
+          </div>
+        </div>
+        <div class="score-bar">
+          <div class="score-label"><span>概率分</span><span>${score.toFixed(1)}</span></div>
+          <div class="score-track"><div class="score-fill" style="width:${score}%"></div></div>
+        </div>
+        <div class="factors-tags">${tags}</div>
+      </div>`;
+  });
+
+  // TOP10 表格
+  let rows = '';
+  (data.top10 || []).forEach(s => {
+    rows += `
+      <tr>
+        <td class="rank-num">${s.rank}</td>
+        <td>${s.code}</td>
+        <td>${s.name}</td>
+        <td class="${pctClass(s.pct)}">${fmtPct(s.pct)}</td>
+        <td>${parseFloat(s.vol_ratio||0).toFixed(2)}</td>
+        <td>${parseFloat(s.turnover||0).toFixed(2)}%</td>
+        <td>${parseFloat(s.amp||0).toFixed(2)}%</td>
+        <td><strong>${parseFloat(s.score||0).toFixed(1)}</strong></td>
+      </tr>`;
+  });
+
+  area.innerHTML = `
+    <div class="report-date">
+      ${data.date}
+      <span class="badge">共 ${data.top10?.length || 0} 只候选</span>
+    </div>
+
+    <div class="section-title">TOP 3 推荐</div>
+    <div class="top3-grid">${cards || '<p style="color:var(--muted)">无数据</p>'}</div>
+
+    <div class="section-title">TOP 10 完整榜单</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>排名</th><th>代码</th><th>名称</th>
+            <th>涨幅</th><th>量比</th><th>换手率</th><th>振幅</th><th>概率分</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">无数据</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── 报告列表 ────────────────────────────────────────
+
+function renderReportList(reports) {
+  const list = document.getElementById('report-list');
+  if (!reports?.length) {
+    list.innerHTML = '<div class="report-empty">暂无报告</div>';
+    return;
+  }
+  list.innerHTML = reports.map(d => `
+    <div class="report-item ${d === currentReport ? 'active' : ''}"
+         onclick="loadReport('${d}')">
+      <div class="dot"></div>
+      <span>${d}</span>
+    </div>`).join('');
+}
+
+function loadReport(date) {
+  currentReport = date;
+  fetch(`/api/report/${date}`)
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok) renderReport(j.data);
+      else appendLog(`[web] 报告加载失败：${j.msg}`);
+    })
+    .catch(e => appendLog(`[web] ❌ 请求失败：${e}`));
+  // 刷新列表高亮
+  document.querySelectorAll('.report-item').forEach(el => {
+    el.classList.toggle('active', el.querySelector('span').textContent === date);
+  });
+}
+
+// ── 状态轮询 ────────────────────────────────────────
+
+function updateStatus(s) {
+  const dot   = document.getElementById('status-dot');
+  const txt   = document.getElementById('status-text');
+  const btn   = document.getElementById('btn-run');
+  const btnTxt = document.getElementById('btn-text');
+  const lastT = document.getElementById('last-run-time');
+
+  dot.className = 'status-dot ' + (s.running ? 'running' : s.last_status);
+  txt.textContent = s.running ? '运行中...' :
+    ({idle:'空闲', success:'已完成', error:'运行出错'}[s.last_status] || s.last_status);
+  btn.disabled = s.running;
+  btn.className = 'btn-run' + (s.running ? ' running' : '');
+  btnTxt.textContent = s.running ? '运行中...' : '立即选股';
+  lastT.textContent = s.last_run ? `上次运行：${s.last_run}` : '';
+
+  renderReportList(s.reports);
+}
+
+function pollStatus() {
+  fetch('/api/status')
+    .then(r => r.json())
+    .then(s => {
+      updateStatus(s);
+      document.getElementById('meta-time').textContent =
+        new Date().toLocaleTimeString('zh-CN');
+    })
+    .catch(() => {});
+}
+
+// ── SSE 日志订阅 ────────────────────────────────────
+
+function subscribeLog() {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource('/api/logs/stream');
+  evtSource.onmessage = (e) => {
+    const line = JSON.parse(e.data);
+    if (line === '__DONE__') {
+      appendLog('[web] ─── 运行结束 ───');
+      evtSource.close();
+      evtSource = null;
+      // 完成后加载最新报告
+      setTimeout(() => {
+        fetch('/api/report/latest')
+          .then(r => r.json())
+          .then(j => {
+            if (j.ok) { currentReport = j.data.date; renderReport(j.data); }
+          });
+        pollStatus();
+      }, 800);
+    } else {
+      appendLog(line);
+    }
+  };
+  evtSource.onerror = () => {
+    if (evtSource) { evtSource.close(); evtSource = null; }
+  };
+}
+
+// ── 启动选股 ────────────────────────────────────────
+
+function runScreener() {
+  clearLog();
+  appendLog('[web] 正在启动选股...');
+  fetch('/api/run', { method: 'POST' })
+    .then(r => r.json())
+    .then(j => {
+      if (j.ok) {
+        appendLog('[web] 选股已启动，等待输出...');
+        subscribeLog();
+        pollStatus();
+      } else {
+        appendLog(`[web] ⚠️ ${j.msg}`);
+      }
+    })
+    .catch(e => appendLog(`[web] ❌ 请求失败：${e}`));
+}
+
+// ── 初始化 ──────────────────────────────────────────
+
+(function init() {
+  pollStatus();
+  // 每5秒轮询状态
+  pollTimer = setInterval(pollStatus, 5000);
+
+  // 如果有正在运行的任务，自动订阅日志
+  fetch('/api/status')
+    .then(r => r.json())
+    .then(s => {
+      updateStatus(s);
+      if (s.running) subscribeLog();
+      // 加载最新报告
+      if (s.reports?.length) loadReport(s.reports[0]);
+    });
+
+  // 时钟
+  setInterval(() => {
+    document.getElementById('meta-time').textContent =
+      new Date().toLocaleTimeString('zh-CN');
+  }, 1000);
+})();
+</script>
+</body>
+</html>
