@@ -180,11 +180,26 @@ function renderTop10(list){
 }
 
 async function tryBackendPick(){
-  const r=await fetch('/api/pick',{signal:AbortSignal.timeout(120000)});
-  if(!r.ok)throw new Error('后端返回错误 '+r.status);
+  const r=await fetch('/api/pick',{signal:AbortSignal.timeout(8000)});
+  if(!r.ok)throw new Error('后端不可用');
   const data=await r.json();
   if(data.error)throw new Error(data.error);
   return data;
+}
+
+async function tryStaticCache(){
+  const today=new Date();
+  for(let d=0;d<7;d++){
+    const dt=new Date(today);dt.setDate(dt.getDate()-d);
+    const ds=dt.toISOString().slice(0,10).replace(/-/g,'');
+    try{
+      const r=await fetch(`output/result_${ds}.json`,{signal:AbortSignal.timeout(5000)});
+      if(!r.ok)continue;
+      const data=await r.json();
+      if(data?.best?.code)return{...data,fromCache:true,cacheDate:ds};
+    }catch(_){}
+  }
+  throw new Error('无缓存数据');
 }
 
 async function startPick(){
@@ -200,9 +215,18 @@ async function startPick(){
       setProgress(100,'✅ 选股完成！');
       renderBest(data.best);renderDetail(data.best.details||{});renderTop10(data.top10||[]);
       return;
-    }catch(backendErr){
-      console.warn('后端不可用，切换到前端模式:',backendErr.message);
-    }
+    }catch(_){console.warn('后端不可用，尝试静态缓存');}
+
+    setProgress(20,'正在读取缓存数据...');
+    try{
+      const data=await tryStaticCache();
+      setProgress(100,`✅ 已加载缓存数据（${data.cacheDate}）`);
+      document.getElementById('genTime').textContent=`数据来源：${data.cacheDate} 缓存 · 非实时`;
+      renderBest(data.best);renderDetail(data.best.details||{});renderTop10(data.top10||[]);
+      document.getElementById('errBox').innerHTML='<div style="background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 14px;color:#8a6800;font-size:.82rem;margin-top:10px">📦 当前显示的是缓存结果，如需实时数据请本地运行 server.py</div>';
+      return;
+    }catch(_){console.warn('缓存不可用，尝试CORS代理');}
+
     setProgress(3,'正在获取A股行情列表...');
     const stocks=await getStockList();
     setProgress(10,`获取到 ${stocks.length} 支候选股，开始评分...`);
