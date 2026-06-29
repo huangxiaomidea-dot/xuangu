@@ -1,0 +1,55 @@
+name: A股每日选股
+
+on:
+  schedule:
+    # 北京时间 14:45 = UTC 06:45
+    - cron: '45 6 * * 1-5'
+  workflow_dispatch:   # 允许手动触发
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: 安装依赖
+        run: pip install baostock pandas numpy flask flask-cors
+
+      - name: 运行选股
+        run: python picker.py
+
+      - name: 发送邮件
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO:   ${{ secrets.MAIL_TO }}
+        run: python mailer.py
+
+      - name: 更新网站数据（推送到 gh-pages）
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 把最新 output 文件复制到 gh-pages 分支
+          git fetch origin gh-pages
+          git checkout gh-pages
+
+          cp -r output/* output/ 2>/dev/null || true
+          # 从 main/dev 分支取最新 output
+          git checkout origin/claude/a-stock-daily-selector-files-lp839j -- output/
+
+          git add output/
+          git diff --cached --quiet || git commit -m "自动更新选股数据 $(date '+%Y-%m-%d')"
+          git push origin gh-pages
