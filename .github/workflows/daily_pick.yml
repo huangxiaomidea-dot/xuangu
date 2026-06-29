@@ -42,12 +42,8 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 把最新 output 文件复制到 gh-pages 分支
           git fetch origin gh-pages
           git checkout gh-pages
-
-          cp -r output/* output/ 2>/dev/null || true
-          # 从 main/dev 分支取最新 output
           git checkout origin/claude/a-stock-daily-selector-files-lp839j -- output/
 
           git add output/
