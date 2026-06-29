@@ -155,7 +155,7 @@ def bs_login():
 def get_stock_list() -> pd.DataFrame:
     """获取A股全部股票列表"""
     log.info("获取A股股票列表...")
-    rs = bs.query_stock_basic(type_="1")    # type_=1 股票
+    rs = bs.query_stock_basic()    # 获取全部股票基本信息
     rows = []
     while rs.error_code == "0" and rs.next():
         rows.append(rs.get_row_data())
