@@ -9,8 +9,8 @@ jobs:
   screen:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: 安装依赖
@@ -19,7 +19,7 @@ jobs:
         run: cd tail-screener && python scripts/run_screen.py
       - name: 上传选股报告
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: screener-report-${{ github.run_id }}
           path: tail-screener/notes/
