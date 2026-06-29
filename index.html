@@ -48,14 +48,32 @@ tr.hl td{background:#fff8f8}
 .err-box{background:#fff5f5;border:1px solid #fcc;border-radius:8px;padding:16px;color:#c0392b;font-size:.88rem;line-height:1.7;margin-top:12px}
 .disclaimer{font-size:.75rem;color:#bbb;text-align:center;margin-top:20px;padding:12px;background:#fffbe6;border-radius:8px;line-height:1.6}
 .gen-time{font-size:.8rem;color:#bbb;text-align:right;margin-bottom:6px}
-@media(max-width:520px){.hero{flex-direction:column;gap:12px;align-items:flex-start}.hero-left .name{font-size:1.8rem}}
+.top3-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:4px}
+.top3-item{border-radius:12px;padding:16px;border:2px solid #f0f0f0;position:relative;transition:.2s}
+.top3-item.rank1{border-color:#e74c3c;background:#fff8f8}
+.top3-item.rank2{border-color:#e67e22;background:#fffaf5}
+.top3-item.rank3{border-color:#95a5a6;background:#fafafa}
+.top3-rank{position:absolute;top:10px;right:12px;font-size:1.4rem}
+.top3-name{font-size:1.15rem;font-weight:800;color:#222;margin-bottom:2px}
+.top3-code{font-size:.78rem;color:#aaa;margin-bottom:8px}
+.top3-price{font-size:1.1rem;font-weight:700;color:#222}
+.top3-chg{font-size:.9rem;margin-top:2px}
+.top3-score{margin-top:10px}
+.top3-score-label{font-size:.75rem;color:#888;margin-bottom:4px}
+.top3-score-bar{height:8px;background:#eee;border-radius:4px;overflow:hidden}
+.top3-score-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#f39c12,#e74c3c);transition:width .8s ease}
+.top3-detail{margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.top3-di{font-size:.72rem;padding:3px 6px;border-radius:4px;background:#f5f5f5}
+.top3-di .lbl{color:#999}
+.top3-di .val{font-weight:600}
+@media(max-width:640px){.top3-grid{grid-template-columns:1fr}.hero{flex-direction:column;gap:12px;align-items:flex-start}.hero-left .name{font-size:1.8rem}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="hd">
     <h1>📈 A股每日选股</h1>
-    <p>基于7项技术指标评分，预测次日开盘上涨概率最大的一支股票</p>
+    <p>基于7项技术指标评分，预测次日开盘上涨概率最大的前3支股票</p>
   </div>
   <div class="card">
     <button class="btn-run" id="btnRun" onclick="startPick()">🔍 开始选股分析</button>
@@ -65,14 +83,10 @@ tr.hl td{background:#fff8f8}
     </div>
     <div id="errBox"></div>
   </div>
-  <div class="card" id="cardBest" style="display:none">
-    <div class="card-title">🏆 今日推荐</div>
+  <div class="card" id="cardTop3" style="display:none">
+    <div class="card-title">🏆 今日推荐 Top 3</div>
     <div class="gen-time" id="genTime"></div>
-    <div id="bestContent"></div>
-  </div>
-  <div class="card" id="cardDetail" style="display:none">
-    <div class="card-title">📊 评分明细</div>
-    <div class="detail-grid" id="detailGrid"></div>
+    <div id="top3Content"></div>
   </div>
   <div class="card" id="cardTop10" style="display:none">
     <div class="card-title">📋 今日 Top 10</div>
@@ -144,32 +158,28 @@ async function getKlines(s){
 function setProgress(pct,text){document.getElementById('progressFill').style.width=pct+'%';document.getElementById('progressText').textContent=text}
 function showErr(msg){document.getElementById('errBox').innerHTML=`<div class="err-box">❌ ${msg}<br><small>提示：建议本地运行 server.py 以获得最佳体验，或稍后重试。</small></div>`}
 
-// 统一渲染函数（兼容后端和前端两种数据格式）
-function renderBest(b){
-  const chg=b.chg!=null?b.chg:(b.change_pct||0);
-  const sign=chg>=0?'+':'',cls=chg>=0?'up':'dn';
-  const mktLabel=b.mkt!=null?(b.mkt===1?'SH':'SZ'):(b.code||'').startsWith('sh')?'SH':'SZ';
-  const codeClean=(b.code||'').replace(/^[a-z]+\./,'');
-  document.getElementById('genTime').textContent='生成时间：'+new Date().toLocaleString('zh-CN');
-  document.getElementById('bestContent').innerHTML=`<div class="hero"><div class="hero-left"><div class="name">${b.name}</div><div class="code">${mktLabel} · ${codeClean}</div></div><div class="hero-right"><div class="price">¥${(+b.price).toFixed(2)}</div><div class="chg ${cls}">${sign}${chg.toFixed(2)}%</div></div></div><div class="score-section"><div class="score-label">综合评分 <span class="score-num">${b.score}</span> / 100</div><div class="score-bar"><div class="score-fill" id="sf" style="width:0%"></div></div></div>`;
-  document.getElementById('cardBest').style.display='';
-  setTimeout(()=>{document.getElementById('sf').style.width=b.score+'%'},80);
+function detHtml(det){
+  return Object.entries(det).map(([k,v])=>{
+    let val,ok;
+    if(v&&typeof v==='object'&&'t' in v){ok=v.t==='b'?v.v:v.ok;val=v.t==='b'?(v.v?'✅':'❌'):v.v}
+    else{ok=typeof v==='boolean'?v:null;val=typeof v==='boolean'?(v?'✅':'❌'):typeof v==='number'?v.toFixed(2):v}
+    const c=ok===true?'#27ae60':ok===false?'#ccc':'#2980b9';
+    return`<div class="top3-di"><span class="lbl">${k} </span><span class="val" style="color:${c}">${val}</span></div>`;
+  }).join('');
 }
-function renderDetail(det){
-  // 兼容后端格式（{key: bool/number}）和前端格式（{key: {v,t,ok}}）
-  const entries=Object.entries(det).map(([k,v])=>{
-    if(v&&typeof v==='object'&&'t' in v){
-      let val,cls;if(v.t==='b'){val=v.v?'✅ 是':'❌ 否';cls=v.v?'ok':'bad'}else{val=v.v;cls=v.ok?'ok':'num'}
-      return`<div class="detail-item"><div class="di-label">${k}</div><div class="di-val ${cls}">${val}</div></div>`;
-    }else{
-      const isB=typeof v==='boolean';
-      const val=isB?(v?'✅ 是':'❌ 否'):typeof v==='number'?v.toFixed(2):v;
-      const cls=isB?(v?'ok':'bad'):'num';
-      return`<div class="detail-item"><div class="di-label">${k}</div><div class="di-val ${cls}">${val}</div></div>`;
-    }
-  });
-  document.getElementById('detailGrid').innerHTML=entries.join('');
-  document.getElementById('cardDetail').style.display='';
+function renderTop3(list){
+  const medals=['🥇','🥈','🥉'],rankCls=['rank1','rank2','rank3'];
+  document.getElementById('genTime').textContent='生成时间：'+new Date().toLocaleString('zh-CN');
+  document.getElementById('top3Content').innerHTML=`<div class="top3-grid">${list.slice(0,3).map((b,idx)=>{
+    const chg=b.chg!=null?b.chg:(b.change_pct||0);
+    const sign=chg>=0?'+':'',cls=chg>=0?'up':'dn';
+    const mktLabel=b.mkt!=null?(b.mkt===1?'SH':'SZ'):(b.code||'').startsWith('sh')?'SH':'SZ';
+    const codeClean=(b.code||'').replace(/^[a-z]+\./,'');
+    const det=b.details||b.det||{};
+    return`<div class="top3-item ${rankCls[idx]}"><div class="top3-rank">${medals[idx]}</div><div class="top3-name">${b.name}</div><div class="top3-code">${mktLabel} · ${codeClean}</div><div class="top3-price">¥${(+b.price).toFixed(2)}</div><div class="top3-chg ${cls}">${sign}${chg.toFixed(2)}%</div><div class="top3-score"><div class="top3-score-label">综合评分 <b>${b.score}</b>/100</div><div class="top3-score-bar"><div class="top3-score-fill" id="sf${idx}" style="width:0%"></div></div></div><div class="top3-detail">${detHtml(det)}</div></div>`;
+  }).join('')}</div>`;
+  document.getElementById('cardTop3').style.display='';
+  setTimeout(()=>list.slice(0,3).forEach((_,i)=>{const el=document.getElementById('sf'+i);if(el)el.style.width=list[i].score+'%'}),80);
 }
 function renderTop10(list){
   document.getElementById('top10Body').innerHTML=list.map((s,idx)=>{
@@ -210,14 +220,14 @@ async function startPick(){
   btn.disabled=true;btn.textContent='⏳ 分析中...';
   document.getElementById('progressWrap').style.display='';
   document.getElementById('errBox').innerHTML='';
-  ['cardBest','cardDetail','cardTop10'].forEach(id=>document.getElementById(id).style.display='none');
+  ['cardTop3','cardTop10'].forEach(id=>document.getElementById(id).style.display='none');
   try{
     // 1. 尝试后端 API
     setProgress(5,'正在连接后端服务...');
     try{
       const data=await tryBackendPick();
       setProgress(100,'✅ 选股完成！');
-      renderBest(data.best);renderDetail(data.best.details||{});renderTop10(data.top10||[]);
+      renderTop3(data.top10||[data.best]);renderTop10(data.top10||[]);
       return;
     }catch(_){console.warn('后端不可用，尝试静态缓存');}
 
@@ -227,7 +237,7 @@ async function startPick(){
       const data=await tryStaticCache();
       setProgress(100,`✅ 已加载缓存数据（${data.cacheDate}）`);
       document.getElementById('genTime').textContent=`数据来源：${data.cacheDate} 缓存 · 非实时`;
-      renderBest(data.best);renderDetail(data.best.details||{});renderTop10(data.top10||[]);
+      renderTop3(data.top10||[data.best]);renderTop10(data.top10||[]);
       document.getElementById('errBox').innerHTML='<div style="background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:10px 14px;color:#8a6800;font-size:.82rem;margin-top:10px">📦 当前显示的是缓存结果，如需实时数据请本地运行 server.py</div>';
       return;
     }catch(_){console.warn('缓存不可用，尝试CORS代理');}
@@ -246,7 +256,7 @@ async function startPick(){
     if(!results.length)throw new Error('所有股票评分失败，可能是网络限制导致K线数据无法获取');
     results.sort((a,b)=>b.score-a.score);
     setProgress(100,`✅ 分析完成！共评分 ${results.length} 支股票`);
-    renderBest(results[0]);renderDetail(results[0].det);renderTop10(results.slice(0,10));
+    renderTop3(results);renderTop10(results.slice(0,10));
   }catch(e){setProgress(0,'');showErr(e.message)}
   finally{btn.disabled=false;btn.textContent='🔄 重新选股'}
 }
