@@ -1,5 +1,5 @@
 """
-报告生成与飞书推送模块
+报告生成、飞书推送、Server酱微信推送模块
 """
 
 import os
@@ -9,19 +9,9 @@ from datetime import datetime
 
 
 def generate_report(top_df: pd.DataFrame, date_str: str = None) -> str:
-    """
-    生成 Markdown 选股报告，保存到 notes/YYYY-MM-DD.md。
-
-    参数：
-        top_df   : 含排名、代码、名称、涨跌幅、振幅、概率分、命中因子的DataFrame
-        date_str : 日期字符串，默认今日
-
-    返回：报告文件路径
-    """
     if date_str is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
 
-    # 确保 notes/ 目录存在（相对于项目根目录）
     notes_dir = os.path.join(os.path.dirname(__file__), "..", "notes")
     os.makedirs(notes_dir, exist_ok=True)
     report_path = os.path.join(notes_dir, f"{date_str}.md")
@@ -88,17 +78,54 @@ def generate_report(top_df: pd.DataFrame, date_str: str = None) -> str:
     return report_path
 
 
+def push_serverchan(send_key: str, top_df: pd.DataFrame, date_str: str = None) -> bool:
+    """Server酱微信推送（sct.ftqq.com）"""
+    if not send_key or send_key.strip() == "":
+        print("[reporter] 未配置 SERVERCHAN_KEY，跳过微信推送")
+        return False
+
+    if date_str is None:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    top3 = top_df.head(3) if not top_df.empty else pd.DataFrame()
+
+    title = f"📊 {date_str} 尾盘选股 TOP3 出炉"
+
+    rows = []
+    if top3.empty:
+        rows.append("今日无满足条件的标的")
+    else:
+        for rank, (_, row) in enumerate(top3.iterrows(), start=1):
+            medal = ["🥇", "🥈", "🥉"][rank - 1]
+            code  = row.get("代码", "-")
+            name  = row.get("名称", "-")
+            pct   = row.get("涨跌幅", 0)
+            score = row.get("概率分", 0)
+            hits  = row.get("命中因子", "-")
+            rows.append(f"{medal} **{name}**（{code}）  ")
+            rows.append(f"涨幅 **{pct:.2f}%** · 概率分 **{score:.1f}**  ")
+            rows.append(f"命中因子：{hits}  ")
+            rows.append("")
+
+    rows.append("> 免责声明：仅供学习，不构成投资建议")
+    desp = "\n".join(rows)
+
+    url = f"https://sctapi.ftqq.com/{send_key.strip()}.send"
+    try:
+        resp = requests.post(url, data={"title": title, "desp": desp}, timeout=15)
+        result = resp.json()
+        if result.get("code") == 0:
+            print("[reporter] Server酱微信推送成功")
+            return True
+        else:
+            print(f"[reporter] Server酱推送失败：{result}")
+            return False
+    except Exception as e:
+        print(f"[reporter] Server酱推送异常：{e}")
+        return False
+
+
 def push_feishu(webhook_url: str, top_df: pd.DataFrame, date_str: str = None) -> bool:
-    """
-    推送选股结果到飞书群机器人。
-
-    参数：
-        webhook_url : 飞书 Webhook 地址
-        top_df      : TOP3 DataFrame
-        date_str    : 日期字符串
-
-    返回：推送是否成功
-    """
     if not webhook_url or webhook_url.strip() == "":
         print("[reporter] 未配置飞书 Webhook，跳过推送")
         return False
@@ -120,13 +147,7 @@ def push_feishu(webhook_url: str, top_df: pd.DataFrame, date_str: str = None) ->
             hits  = row.get("命中因子", "-")
             lines.append(f"{rank}. {name}（{code}）涨幅{pct:.2f}% 概率分{score:.1f}\n   ▶ {hits}")
 
-    text = "\n".join(lines)
-
-    payload = {
-        "msg_type": "text",
-        "content": {"text": text},
-    }
-
+    payload = {"msg_type": "text", "content": {"text": "\n".join(lines)}}
     try:
         resp = requests.post(webhook_url, json=payload, timeout=10)
         if resp.status_code == 200 and resp.json().get("code", -1) == 0:

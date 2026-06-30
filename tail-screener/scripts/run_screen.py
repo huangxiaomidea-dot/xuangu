@@ -8,7 +8,6 @@ import os
 import yaml
 from datetime import datetime
 
-# 将项目根目录加入路径，确保 src 模块可导入
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
@@ -27,14 +26,12 @@ def main():
     print(f"=== 运行时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     print("=" * 50)
 
-    # 1. 加载配置
     try:
         cfg = load_config()
     except Exception as e:
         print(f"[main] 配置文件加载失败：{e}")
         sys.exit(1)
 
-    # 2. 获取全A实时快照
     print("\n[步骤1] 获取全A实时快照...")
     snapshot_df = fetcher.get_realtime_snapshot()
     if snapshot_df.empty:
@@ -42,9 +39,7 @@ def main():
         sys.exit(1)
     print(f"[main] 获取到 {len(snapshot_df)} 条数据，开始计算因子...")
 
-    # 3. 获取历史K线（TOP候选股，加速：先用快照初筛再批量拉K线）
     print("\n[步骤2] 预筛选 + 获取历史K线...")
-    # 先按快照因子初筛，减少需要拉K线的股票数量
     pre_filter = snapshot_df[
         (snapshot_df["涨跌幅"] >= cfg["factors"]["change_pct_min"]) &
         (snapshot_df["涨跌幅"] <= cfg["factors"]["change_pct_max"]) &
@@ -59,7 +54,6 @@ def main():
         print("[main] 初筛无候选股，将对全量使用快照因子计算")
         hist_dict = {}
 
-    # 4. 计算因子概率分，取TOP10
     print("\n[步骤3] 计算因子概率分...")
     top10_df = factors.compute_scores(snapshot_df, hist_dict, top_n=10)
 
@@ -75,26 +69,29 @@ def main():
     display_cols = [c for c in display_cols if c in top10_df.columns]
     print(top10_df[display_cols].to_string())
 
-    # 5. 取TOP3
     top3_df = top10_df.head(3)
     print(f"\n[main] 今日推荐 TOP3：{top3_df['名称'].tolist()}")
 
-    # 6. 历史回测参考胜率
     print("\n[步骤4] 历史回测...")
     backtest.backtest_check(hist_dict, cfg)
 
-    # 7. 生成报告
     print("\n[步骤5] 生成选股报告...")
     date_str = datetime.now().strftime("%Y-%m-%d")
     report_path = reporter.generate_report(top10_df, date_str)
 
-    # 8. 飞书推送
+    # Server酱微信推送
+    serverchan_key = os.environ.get("SERVERCHAN_KEY", "").strip()
+    if serverchan_key:
+        print("\n[步骤6] Server酱微信推送...")
+        reporter.push_serverchan(serverchan_key, top3_df, date_str)
+    else:
+        print("\n[步骤6] 未配置 SERVERCHAN_KEY，跳过微信推送")
+
+    # 飞书推送
     feishu_url = cfg.get("feishu_webhook", "").strip()
     if feishu_url:
-        print("\n[步骤6] 推送飞书通知...")
+        print("\n[步骤7] 推送飞书通知...")
         reporter.push_feishu(feishu_url, top3_df, date_str)
-    else:
-        print("\n[步骤6] 未配置飞书 Webhook，跳过推送（可在 config.yaml 中填入 feishu_webhook）")
 
     print("\n" + "=" * 50)
     print("=== 完成 ===")

@@ -2,30 +2,28 @@ name: Daily Screen
 
 on:
   schedule:
-    # 每个交易日北京时间14:40（UTC 06:40）运行
+    # 每个交易日北京时14:40（UTC 06:40）运行
     - cron: '40 6 * * 1-5'
   workflow_dispatch:
 
 jobs:
   screen:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+      - uses: actions/checkout@v4
 
       - name: 安装依赖
-        run: pip install -r tail-screener/requirements.txt
+        run: pip3 install -i https://mirrors.aliyun.com/pypi/simple/ -r tail-screener/requirements.txt
 
       - name: 运行尾盘选股
-        run: cd tail-screener && python scripts/run_screen.py
+        env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+        run: cd tail-screener && python3 scripts/run_screen.py
 
       - name: 上传选股报告
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: screener-report-${{ github.run_id }}
           path: tail-screener/notes/
