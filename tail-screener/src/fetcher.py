@@ -1,6 +1,7 @@
 """
 全A股实时快照与历史K线获取模块
 数据源：新浪财经（境内服务器可用）
+新浪 mktcap 字段单位为万元，除以10000得亿元
 """
 
 import time
@@ -22,10 +23,6 @@ def _fetch_page(page: int, page_size: int = 200) -> list:
 
 
 def get_realtime_snapshot() -> pd.DataFrame:
-    """
-    获取全A股实时快照（新浪财经接口）。
-    新浪 mktcap 单位为亿元，直接与50~500对比。
-    """
     all_rows = []
     for attempt in range(3):
         try:
@@ -64,7 +61,6 @@ def get_realtime_snapshot() -> pd.DataFrame:
     df = pd.DataFrame(all_rows)
     print(f"[fetcher] 原始列名: {df.columns.tolist()}")
 
-    # 列名映射
     df = df.rename(columns={
         "code":          "代码",
         "name":          "名称",
@@ -73,22 +69,19 @@ def get_realtime_snapshot() -> pd.DataFrame:
         "turnoverratio": "换手率",
     })
 
-    # 总市值：mktcap 单位为亿元，直接使用
-    df["总市值亿"] = pd.to_numeric(df.get("mktcap", float("nan")), errors="coerce")
-    print(f"[fetcher] 总市值样本（亿）: {df['总市值亿'].describe().to_dict()}")
+    # mktcap 单位为万元 → 除以10000得亿元
+    df["总市值亿"] = pd.to_numeric(df.get("mktcap", float("nan")), errors="coerce") / 10000
+    print(f"[fetcher] 总市值范围（亿）: {df['总市值亿'].min():.1f} ~ {df['总市值亿'].max():.1f}")
 
-    # 振幅 = (最高 - 最低) / 昨收 * 100
     for c in ["high", "low", "settlement", "最新价", "涨跌幅"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["振幅"] = ((df["high"] - df["low"]) / df["settlement"].replace(0, float("nan")) * 100).round(2)
 
-    # 换手率
     if "换手率" in df.columns:
         df["换手率"] = pd.to_numeric(df["换手率"], errors="coerce")
     else:
         df["换手率"] = float("nan")
 
-    # 量比无字段，默认1.0，后续从历史K线更新
     df["量比"] = 1.0
 
     required = ["代码", "名称", "最新价", "涨跌幅", "振幅", "总市值亿"]
@@ -97,10 +90,8 @@ def get_realtime_snapshot() -> pd.DataFrame:
         print(f"[fetcher] 缺少列: {missing}")
         return pd.DataFrame()
 
-    # 过滤
     df = df[~df["名称"].str.contains("ST", na=False)]
     df = df[~df["代码"].astype(str).str.startswith(("688", "4", "8"))]
-    # 市值范围：50亿 ~ 500亿（单位亿）
     df = df[(df["总市值亿"] >= 50) & (df["总市值亿"] <= 500)]
     df = df[df["最新价"] > 0]
     df = df.dropna(subset=["最新价", "涨跌幅", "振幅"])
