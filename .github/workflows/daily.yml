@@ -7,16 +7,13 @@ on:
 
 jobs:
   screen:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
       - name: 安装依赖
-        run: pip install -r tail-screener/requirements.txt
+        run: pip3 install -r tail-screener/requirements.txt
       - name: 运行尾盘选股
-        run: cd tail-screener && python scripts/run_screen.py
+        run: cd tail-screener && python3 scripts/run_screen.py
       - name: 上传选股报告
         if: always()
         uses: actions/upload-artifact@v4
