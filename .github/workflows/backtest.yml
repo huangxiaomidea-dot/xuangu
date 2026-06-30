@@ -1,0 +1,19 @@
+name: Backtest Strategy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/tail-screener-setup-h5yq4b
+
+      - name: 安装依赖
+        run: pip3 install -i https://mirrors.aliyun.com/pypi/simple/ -r tail-screener/requirements.txt
+
+      - name: 运行回测
+        run: cd tail-screener && python3 scripts/run_backtest.py
