@@ -4,11 +4,28 @@
 """
 
 import time
-import akshare as ak
+import requests
 import pandas as pd
+
+# 打补模拟浏览器请求头，防止东财拒绝非浏览器请求
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+_orig_init = requests.Session.__init__
+def _patched_init(self, *args, **kwargs):
+    _orig_init(self, *args, **kwargs)
+    self.headers.update({"User-Agent": _UA, "Referer": "https://quote.eastmoney.com/"})
+requests.Session.__init__ = _patched_init
+
+import akshare as ak
 
 
 def get_realtime_snapshot() -> pd.DataFrame:
+    """
+    获取全A股实时快照，过滤不符合条件的股票。
+    akshare 返回的常见列名：
+      代码, 名称, 最新价, 涨跌幅, 涨跌额, 成交量, 成交额,
+      振幅, 最高, 最低, 今开, 昨收, 量比, 换手率, 市盈率-动态,
+      市净率, 总市值, 流通市值
+    """
     for attempt in range(3):
         try:
             df = ak.stock_zh_a_spot_em()
@@ -17,7 +34,7 @@ def get_realtime_snapshot() -> pd.DataFrame:
         except Exception as e:
             print(f"[fetcher] 获取快照失败（第{attempt+1}次）: {e}")
             if attempt < 2:
-                time.sleep(1)
+                time.sleep(2)
             else:
                 print("[fetcher] 已重试3次，放弃")
                 return pd.DataFrame()
@@ -40,7 +57,7 @@ def get_realtime_snapshot() -> pd.DataFrame:
     required = ["代码", "名称", "最新价", "涨跌幅", "量比", "换手率", "振幅", "总市值"]
     missing = [c for c in required if c not in df.columns]
     if missing:
-        print(f"[fetcher] 缺少列: {missing}")
+        print(f"[fetcher] 缺少列: {missing}，当前列: {df.columns.tolist()}")
         return pd.DataFrame()
 
     df = df[~df["名称"].str.contains("ST", na=False)]
