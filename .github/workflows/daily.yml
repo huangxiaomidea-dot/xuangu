@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 安装依赖
-        run: pip3 install -r tail-screener/requirements.txt
+        run: pip3 install -i https://mirrors.aliyun.com/pypi/simple/ -r tail-screener/requirements.txt
       - name: 运行尾盘选股
         run: cd tail-screener && python3 scripts/run_screen.py
       - name: 上传选股报告
