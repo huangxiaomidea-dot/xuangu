@@ -6,22 +6,22 @@ market:
   min_list_days: 60
 
 factors:
-  change_pct_min: 3
-  change_pct_max: 5
-  volume_ratio_min: 1.0
-  turnover_min: 5
+  change_pct_min: 2
+  change_pct_max: 7
+  volume_ratio_min: 1.5
+  turnover_min: 3
   turnover_max: 10
   amplitude_max: 8
   above_ma20: true
-  vol_gt_ma5_ratio: 0.6
+  vol_gt_ma5_ratio: 1.0
 
 weights:
   change_pct: 0.15
-  volume_ratio: 0.10
-  turnover: 0.10
-  amplitude: 0.10
+  volume_ratio: 0.20
+  turnover: 0.05
+  amplitude: 0.05
   above_ma20: 0.20
-  vol_gt_ma5: 0.20
-  market_cap_fit: 0.15
+  ma_trend: 0.20
+  vol_gt_ma5: 0.15
 
 feishu_webhook: ""
