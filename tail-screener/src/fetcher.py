@@ -1,121 +1,170 @@
 """
-全A股实时快照与历史K线获取模块
-使用 akshare 接口，带重试机制
+数据源：新浪财经直连 API（境内服务器可用，不依赖 akshare/东方财富）
+新浪 mktcap 字段单位为万元，除以10000得亿元
 """
 
 import time
-import akshare as ak
+import json
+import requests
 import pandas as pd
+
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://finance.sina.com.cn/",
+}
+
+_SNAPSHOT_URL = (
+    "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php"
+    "/Market_Center.getHQNodeData"
+)
+_HIST_URL = (
+    "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php"
+    "/CN_MarketData.getKLineData"
+)
+
+
+def _fetch_snapshot_page(page: int, page_size: int = 200) -> list:
+    params = {
+        "page": page,
+        "num": page_size,
+        "sort": "symbol",
+        "asc": 1,
+        "node": "hs_a",
+    }
+    resp = requests.get(_SNAPSHOT_URL, params=params, headers=_HEADERS, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, list) else []
 
 
 def get_realtime_snapshot() -> pd.DataFrame:
     """
-    获取全A股实时快照，过滤不符合条件的股票。
-    akshare 返回的常见列名：
-      代码, 名称, 最新价, 涨跌幅, 涨跌额, 成交量, 成交额,
-      振幅, 最高, 最低, 今开, 昨收, 量比, 换手率, 市盈率-动态,
-      市净率, 总市值, 流通市值, 涨速, 5分钟涨跌, 60日涨跌幅, 年初至今涨跌幅
+    获取全A股实时快照。
+    新浪返回字段：symbol, name, trade(最新价), changepercent(涨跌幅%),
+      volume(成交量手), amount(成交额元), high, low, open, settlement(昨收),
+      mktcap(万元), pb, per, turnoverratio(换手率%)
     """
-    for attempt in range(3):
-        try:
-            df = ak.stock_zh_a_spot_em()
-            print(f"[fetcher] 原始列名: {df.columns.tolist()}")
+    all_rows = []
+    page = 1
+    while True:
+        for attempt in range(3):
+            try:
+                rows = _fetch_snapshot_page(page)
+                break
+            except Exception as e:
+                print(f"[fetcher] 获取快照失败（第{attempt+1}次）: {e}")
+                if attempt < 2:
+                    time.sleep(2)
+                else:
+                    print("[fetcher] 已重试3次，放弃获取快照")
+                    rows = []
+        if not rows:
             break
-        except Exception as e:
-            print(f"[fetcher] 获取快照失败（第{attempt+1}次）: {e}")
-            if attempt < 2:
-                time.sleep(1)
-            else:
-                print("[fetcher] 已重试3次，放弃获取快照")
-                return pd.DataFrame()
+        all_rows.extend(rows)
+        if len(rows) < 200:
+            break
+        page += 1
+        time.sleep(0.1)
 
-    if df.empty:
-        print("[fetcher] 快照数据为空")
-        return df
-
-    # 统一列名映射，兼容 akshare 不同版本字段名
-    col_map = {}
-    for col in df.columns:
-        if col in ("代码", "股票代码"):
-            col_map[col] = "代码"
-        elif col in ("名称", "股票名称"):
-            col_map[col] = "名称"
-        elif col in ("最新价", "现价"):
-            col_map[col] = "最新价"
-        elif "涨跌幅" in col and "60" not in col and "年初" not in col and "5分" not in col:
-            col_map[col] = "涨跌幅"
-        elif col in ("量比",):
-            col_map[col] = "量比"
-        elif col in ("换手率",):
-            col_map[col] = "换手率"
-        elif col in ("振幅",):
-            col_map[col] = "振幅"
-        elif col in ("总市值",):
-            col_map[col] = "总市值"
-    df = df.rename(columns=col_map)
-
-    required_cols = ["代码", "名称", "最新价", "涨跌幅", "量比", "换手率", "振幅", "总市值"]
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        print(f"[fetcher] 缺少必要列: {missing}，当前列: {df.columns.tolist()}")
+    if not all_rows:
         return pd.DataFrame()
 
-    # 1. 剔除ST、*ST
+    df = pd.DataFrame(all_rows)
+
+    # 列名映射
+    rename = {
+        "symbol":       "代码",
+        "name":         "名称",
+        "trade":        "最新价",
+        "changepercent":"涨跌幅",
+        "volume":       "成交量",
+        "amount":       "成交额",
+        "high":         "最高",
+        "low":          "最低",
+        "open":         "开盘",
+        "settlement":   "昨收",
+        "mktcap":       "mktcap",
+        "turnoverratio":"换手率",
+    }
+    df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+
+    # 数值转换
+    for col in ["最新价", "涨跌幅", "成交量", "最高", "最低", "开盘", "昨收", "换手率", "mktcap"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # 总市值：mktcap 单位为万元 → 亿元
+    df["总市值亿"] = df["mktcap"] / 10000
+
+    # 振幅 = (high - low) / settlement * 100
+    df["振幅"] = ((df["最高"] - df["最低"]) / df["昨收"] * 100).round(2)
+
+    # 量比暂时设为1.0，在 factors 里用历史K线修正
+    df["量比"] = 1.0
+
+    # 过滤
     df = df[~df["名称"].str.contains("ST", na=False)]
-
-    # 2. 剔除科创板(688)、北交所(4/8开头)
-    df = df[~df["代码"].astype(str).str.startswith(("688", "4", "8"))]
-
-    # 3. 总市值过滤：单位为元，配置为亿，需换算
-    df["总市值"] = pd.to_numeric(df["总市值"], errors="coerce")
-    # akshare 总市值单位为元
-    df = df[(df["总市值"] >= 50e8) & (df["总市值"] <= 500e8)]
-
-    # 4. 数值类型转换，过滤无效数据
-    for col in ["最新价", "涨跌幅", "量比", "换手率", "振幅"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["最新价", "涨跌幅", "量比", "换手率", "振幅"])
-
-    # 5. 过滤价格异常（停牌等）
+    df = df[~df["代码"].astype(str).str.startswith(("bj", "688"))]
+    df["代码"] = df["代码"].astype(str).str.replace(r"^(sh|sz)", "", regex=True)
+    df = df[~df["代码"].str.startswith(("4", "8"))]
+    df = df[(df["总市值亿"] >= 50) & (df["总市值亿"] <= 500)]
+    df = df.dropna(subset=["最新价", "涨跌幅", "换手率", "振幅"])
     df = df[df["最新价"] > 0]
-
     df = df.reset_index(drop=True)
+
     print(f"[fetcher] 过滤后剩余 {len(df)} 只股票")
     return df
 
 
 def get_hist_k(symbol: str, days: int = 60) -> pd.DataFrame:
-    """
-    获取单只股票的前复权日K线数据（最近 days 行）。
-    返回列含：日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额, 振幅, 涨跌幅, 涨跌额, 换手率
-    """
+    """获取单只股票历史日K线（新浪接口）"""
+    code = str(symbol).zfill(6)
+    if code.startswith(("6", "9")):
+        full = f"sh{code}"
+    elif code.startswith(("4", "8")):
+        full = f"bj{code}"
+    else:
+        full = f"sz{code}"
+
     for attempt in range(3):
         try:
-            df = ak.stock_zh_a_hist(symbol=symbol, period="daily", adjust="qfq")
-            if df.empty:
-                return df
-            df = df.tail(days).reset_index(drop=True)
+            resp = requests.get(
+                _HIST_URL,
+                params={"symbol": full, "scale": 240, "ma": "no", "datalen": days},
+                headers=_HEADERS,
+                timeout=15,
+            )
+            raw = resp.text.strip()
+            if not raw or raw == "null":
+                return pd.DataFrame()
+            data = json.loads(raw)
+            if not data:
+                return pd.DataFrame()
+            df = pd.DataFrame(data)
+            df.rename(columns={"d": "日期", "o": "开盘", "c": "收盘",
+                                "h": "最高", "l": "最低", "v": "成交量"}, inplace=True)
+            for col in ["开盘", "收盘", "最高", "最低", "成交量"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df["日期"] = pd.to_datetime(df["日期"])
+            df = df.sort_values("日期").reset_index(drop=True)
             return df
         except Exception as e:
-            print(f"[fetcher] 获取历史K线 {symbol} 失败（第{attempt+1}次）: {e}")
             if attempt < 2:
                 time.sleep(1)
     return pd.DataFrame()
 
 
 def batch_get_hist(symbols: list, days: int = 60) -> dict:
-    """
-    批量获取历史K线，返回 {symbol: df} 字典。
-    对获取失败的股票打印警告并跳过。
-    """
+    """批量获取历史K线，返回 {symbol: df} 字典"""
     hist_dict = {}
     total = len(symbols)
     for i, sym in enumerate(symbols):
         if (i + 1) % 20 == 0:
-            print(f"[fetcher] 已获取历史K线 {i+1}/{total}...")
+            print(f"[fetcher] 历史K线 {i+1}/{total}，成功 {len(hist_dict)} 只")
         df = get_hist_k(sym, days)
         if not df.empty:
             hist_dict[sym] = df
-        time.sleep(0.05)  # 避免请求过于频繁
+        time.sleep(0.05)
     print(f"[fetcher] 历史K线获取完成，成功 {len(hist_dict)}/{total} 只")
     return hist_dict
