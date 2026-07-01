@@ -1,5 +1,6 @@
 """
 数据源：新浪财经直连 API
+使用 sh_a + sz_a 节点获取没深A股（hs_a返回的是北交所股票）
 """
 
 import time
@@ -23,43 +24,54 @@ _HIST_URL = (
 )
 
 
-def _fetch_snapshot_page(page: int, page_size: int = 200) -> list:
-    params = {"page": page, "num": page_size, "sort": "symbol", "asc": 1, "node": "hs_a"}
-    resp = requests.get(_SNAPSHOT_URL, params=params, headers=_HEADERS, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
-    return data if isinstance(data, list) else []
-
-
-def get_realtime_snapshot() -> pd.DataFrame:
+def _fetch_node_all(node: str, page_size: int = 200) -> list:
+    """拉取指定节点的全部数据（自动翻页）"""
     all_rows = []
     page = 1
     while True:
+        params = {"page": page, "num": page_size, "sort": "symbol", "asc": 1, "node": node}
         for attempt in range(3):
             try:
-                rows = _fetch_snapshot_page(page)
+                resp = requests.get(_SNAPSHOT_URL, params=params, headers=_HEADERS, timeout=15)
+                resp.raise_for_status()
+                rows = resp.json()
+                if not isinstance(rows, list):
+                    rows = []
                 break
             except Exception as e:
-                print(f"[fetcher] 获取快照失败（第{attempt+1}次）: {e}")
+                print(f"[fetcher] {node} 第{page}页失败({attempt+1}): {e}")
                 if attempt < 2:
                     time.sleep(2)
                 else:
-                    print("[fetcher] 已重试3次，放弃")
                     rows = []
         if not rows:
             break
         all_rows.extend(rows)
-        if len(rows) < 200:
+        if len(rows) < page_size:
             break
         page += 1
-        time.sleep(0.1)
+        time.sleep(0.15)
+    return all_rows
 
+
+def get_realtime_snapshot() -> pd.DataFrame:
+    """获取没深全A股实时快照"""
+    # 分别拉取上证A股和深证A股
+    print("[fetcher] 拉取上证A股(sh_a)...")
+    sh_rows = _fetch_node_all("sh_a")
+    print(f"[fetcher] 上证A股: {len(sh_rows)} 条")
+
+    print("[fetcher] 拉取深证A股(sz_a)...")
+    sz_rows = _fetch_node_all("sz_a")
+    print(f"[fetcher] 深证A股: {len(sz_rows)} 条")
+
+    all_rows = sh_rows + sz_rows
     if not all_rows:
+        print("[fetcher] 未获取到任何数据")
         return pd.DataFrame()
 
     df = pd.DataFrame(all_rows)
-    print(f"[fetcher] 原始数据 {len(df)} 条，字段: {df.columns.tolist()[:10]}")
-    print(f"[fetcher] 样本行: {df.iloc[0].to_dict() if len(df) > 0 else '无'}")
+    print(f"[fetcher] 共 {len(df)} 条原始数据")
 
     rename = {
         "symbol":        "代码",
@@ -82,57 +94,31 @@ def get_realtime_snapshot() -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # 总市值：mktcap 单位为万元 → 亿元
-    if "mktcap" in df.columns:
-        df["总市值亿"] = df["mktcap"] / 10000
-        print(f"[fetcher] mktcap 样本均值={df['mktcap'].mean():.0f}，总市值亿均值={df['总市值亿'].mean():.1f}")
-    else:
-        print("[fetcher] 警告：没有 mktcap 字段")
-        df["总市值亿"] = 999
+    df["总市值亿"] = df.get("mktcap", pd.Series(dtype=float)) / 10000
 
-    # 振幅
-    if "昨收" in df.columns:
-        df["振幅"] = ((df["最高"] - df["最低"]) / df["昨收"] * 100).round(2)
-    else:
-        df["振幅"] = 0.0
+    # 振幅 = (high - low) / 昨收 * 100
+    df["振幅"] = ((df["最高"] - df["最低"]) / df["昨收"] * 100).round(2)
 
+    # 量比暂设1.0，在 factors 里用K线修正
     df["量比"] = 1.0
 
-    # 过滤步骤，逐步打印
-    n0 = len(df)
+    # 过滤
     df = df[~df["名称"].str.contains("ST", na=False)]
-    print(f"[fetcher] 去 ST后: {len(df)} (少了{n0-len(df)})")
-
-    n0 = len(df)
-    df = df[~df["代码"].astype(str).str.startswith(("bj", "688"))]
-    print(f"[fetcher] 去北交所/科创后: {len(df)} (少了{n0-len(df)})")
-
-    df["代码"] = df["代码"].astype(str).str.replace(r"^(sh|sz)", "", regex=True)
-    n0 = len(df)
-    df = df[~df["代码"].str.startswith(("4", "8"))]
-    print(f"[fetcher] 去4/8头后: {len(df)} (少了{n0-len(df)})")
-
-    n0 = len(df)
+    # 剔除科创板(688)，代码去掉sh/sz前缀后再判断
+    df["代码"] = df["代码"].astype(str).str.replace(r"^(sh|sz|bj)", "", regex=True)
+    df = df[~df["代码"].str.startswith(("688", "4", "8", "9"))]
     df = df[(df["总市值亿"] >= 50) & (df["总市值亿"] <= 500)]
-    print(f"[fetcher] 市值50-500亿后: {len(df)} (少了{n0-len(df)})")
-
-    n0 = len(df)
     df = df.dropna(subset=["最新价", "涨跌幅", "换手率"])
-    print(f"[fetcher] dropna后: {len(df)} (少了{n0-len(df)})")
-
     df = df[df["最新价"] > 0]
     df = df.reset_index(drop=True)
-    print(f"[fetcher] 最终剩余 {len(df)} 只股票")
+
+    print(f"[fetcher] 过滤后剩余 {len(df)} 只股票")
     return df
 
 
 def get_hist_k(symbol: str, days: int = 60) -> pd.DataFrame:
     code = str(symbol).zfill(6)
-    if code.startswith(("6", "9")):
-        full = f"sh{code}"
-    elif code.startswith(("4", "8")):
-        full = f"bj{code}"
-    else:
-        full = f"sz{code}"
+    full = f"sh{code}" if code.startswith(("6", "9")) else f"sz{code}"
     for attempt in range(3):
         try:
             resp = requests.get(
@@ -152,9 +138,8 @@ def get_hist_k(symbol: str, days: int = 60) -> pd.DataFrame:
             for col in ["开盘", "收盘", "最高", "最低", "成交量"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             df["日期"] = pd.to_datetime(df["日期"])
-            df = df.sort_values("日期").reset_index(drop=True)
-            return df
-        except Exception as e:
+            return df.sort_values("日期").reset_index(drop=True)
+        except Exception:
             if attempt < 2:
                 time.sleep(1)
     return pd.DataFrame()
@@ -170,5 +155,5 @@ def batch_get_hist(symbols: list, days: int = 60) -> dict:
         if not df.empty:
             hist_dict[sym] = df
         time.sleep(0.05)
-    print(f"[fetcher] 历史K线获取完成，成功 {len(hist_dict)}/{total} 只")
+    print(f"[fetcher] K线获取完成，成功 {len(hist_dict)}/{total} 只")
     return hist_dict
