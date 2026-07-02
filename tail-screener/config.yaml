@@ -12,16 +12,17 @@ factors:
   turnover_min: 3
   turnover_max: 10
   amplitude_max: 8
-  above_ma20: true
+  close_strength_min: 0.7
+  upper_shadow_max: 2.0
   vol_gt_ma5_ratio: 1.0
 
 weights:
-  change_pct: 0.15
+  change_pct: 0.10
   volume_ratio: 0.20
-  turnover: 0.05
-  amplitude: 0.05
-  above_ma20: 0.20
-  ma_trend: 0.20
-  vol_gt_ma5: 0.15
+  close_strength: 0.20
+  upper_shadow: 0.15
+  ma_trend: 0.15
+  above_ma20: 0.10
+  vol_gt_ma5: 0.10
 
 feishu_webhook: ""
