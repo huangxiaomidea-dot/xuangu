@@ -40,10 +40,10 @@ def main():
     print(f"[main] 获取到 {len(snapshot_df)} 条数据，开始计算因子...")
 
     print("\n[步骤2] 预筛选 + 获取历史K线...")
+    # 注意：预筛选只按涨跌幅，不能注量比——量比需要历史K线才能计算，此时尚为默认值
     pre_filter = snapshot_df[
         (snapshot_df["涨跌幅"] >= cfg["factors"]["change_pct_min"]) &
-        (snapshot_df["涨跌幅"] <= cfg["factors"]["change_pct_max"]) &
-        (snapshot_df["量比"] >= cfg["factors"]["volume_ratio_min"])
+        (snapshot_df["涨跌幅"] <= cfg["factors"]["change_pct_max"])
     ]
     print(f"[main] 快照初筛后 {len(pre_filter)} 只候选股，开始拉取历史K线...")
 
@@ -79,7 +79,6 @@ def main():
     date_str = datetime.now().strftime("%Y-%m-%d")
     report_path = reporter.generate_report(top10_df, date_str)
 
-    # Server酱微信推送
     serverchan_key = os.environ.get("SERVERCHAN_KEY", "").strip()
     if serverchan_key:
         print("\n[步骤6] Server酱微信推送...")
@@ -87,7 +86,6 @@ def main():
     else:
         print("\n[步骤6] 未配置 SERVERCHAN_KEY，跳过微信推送")
 
-    # 飞书推送
     feishu_url = cfg.get("feishu_webhook", "").strip()
     if feishu_url:
         print("\n[步骤7] 推送飞书通知...")
