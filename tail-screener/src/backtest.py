@@ -87,7 +87,4 @@ def backtest_check(hist_dict: dict, config: dict = None) -> float:
     win_rate = win / total
     print(f"[backtest] 历史回测参考胜率：{win_rate*100:.1f}%（基于近60日 {total} 个样本）")
 
-    if win_rate < 0.55:
-        print("[backtest] ⚠️ 警告：当前因子组合历史胜率不足55%，建议暂停实盘")
-
     return win_rate
