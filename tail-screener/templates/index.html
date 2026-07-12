@@ -112,6 +112,26 @@ header .meta { color: var(--muted); font-size: 11px; }
 
 .result-area { flex: 1; overflow-y: auto; padding: 16px; }
 
+/* 滚动复盘面板 */
+.track-panel {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; font-size: 13px;
+}
+.track-panel.empty { color: var(--muted); font-size: 12px; }
+.track-stat { display: flex; flex-direction: column; gap: 2px; }
+.track-stat .tv-label { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+.track-stat .tv-value { font-size: 16px; font-weight: 700; }
+.track-stat .tv-value.up { color: var(--red); }
+.track-stat .tv-value.down { color: var(--green); }
+.track-recent { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.track-chip {
+  font-size: 11px; padding: 3px 8px; border-radius: 12px;
+  background: var(--surface2); border: 1px solid var(--border); white-space: nowrap;
+}
+.track-chip.win  { color: var(--red); }
+.track-chip.loss { color: var(--green); }
+
 /* 报告标题 */
 .report-date { font-size: 18px; font-weight: 700; margin-bottom: 16px;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -272,6 +292,7 @@ tbody tr:hover td { background: var(--surface2); }
       </div>
       <div class="last-run" id="last-run-m"></div>
     </div>
+    <div id="track-panel-m" class="track-panel"></div>
     <div style="padding:16px" id="result-area-m">
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
@@ -319,6 +340,7 @@ tbody tr:hover td { background: var(--surface2); }
       </div>
       <div class="last-run" id="last-run-time"></div>
     </div>
+    <div id="track-panel" class="track-panel"></div>
     <div class="result-area" id="result-area">
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
@@ -503,6 +525,43 @@ function pollStatus() {
   }).catch(()=>{});
 }
 
+// 滚动复盘面板
+function renderTrackPanel(stats, recent) {
+  let html;
+  if (!stats || stats.total === 0) {
+    html = '<span>📊 滚动复盘：暂无历史结算数据，明日起开始累计</span>';
+  } else {
+    const wrClass = stats.win_rate >= 55 ? 'up' : 'down';
+    const arClass = stats.avg_return >= 0 ? 'up' : 'down';
+    html = `
+      <div class="track-stat">
+        <span class="tv-label">累计胜率</span>
+        <span class="tv-value ${wrClass}">${stats.win_rate}%</span>
+      </div>
+      <div class="track-stat">
+        <span class="tv-label">样本数</span>
+        <span class="tv-value">${stats.wins}/${stats.total}</span>
+      </div>
+      <div class="track-stat">
+        <span class="tv-label">平均收益</span>
+        <span class="tv-value ${arClass}">${stats.avg_return>=0?'+':''}${stats.avg_return}%</span>
+      </div>
+      <div class="track-recent">${(recent||[]).slice(0,6).map(r=>
+        `<span class="track-chip ${r.win?'win':'loss'}">${r.win?'✅':'❌'} ${r.name} ${r.return_pct>=0?'+':''}${r.return_pct}%</span>`
+      ).join('')}</div>`;
+  }
+  ['track-panel','track-panel-m'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  });
+}
+
+function pollTrack() {
+  fetch('/api/track').then(r=>r.json()).then(j=>{
+    if (j.ok) renderTrackPanel(j.stats, j.recent);
+  }).catch(()=>{});
+}
+
 // SSE 日志
 function subscribeLog() {
   if (evtSource) evtSource.close();
@@ -517,6 +576,7 @@ function subscribeLog() {
           if(j.ok){ currentReport=j.data.date; renderBothReports(j.data); }
         });
         pollStatus();
+        pollTrack();
       }, 800);
     } else {
       appendLog(line);
@@ -537,7 +597,9 @@ function runScreener() {
 
 (function init(){
   pollStatus();
+  pollTrack();
   setInterval(pollStatus, 5000);
+  setInterval(pollTrack, 30000);
   setInterval(()=>{
     document.getElementById('meta-time').textContent=new Date().toLocaleTimeString('zh-CN');
   },1000);

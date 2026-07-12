@@ -20,6 +20,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 NOTES_DIR = os.path.join(ROOT, "notes")
 SCRIPTS_DIR = os.path.join(ROOT, "scripts")
 
+sys.path.insert(0, ROOT)
+from src import tracker  # noqa: E402
+
 app = Flask(__name__, template_folder="templates")
 
 # 全局运行状态
@@ -224,6 +227,19 @@ def api_report(date_str):
     if not os.path.exists(md_path):
         return jsonify({"ok": False, "msg": "报告不存在"})
     return jsonify({"ok": True, "data": _parse_report_md(md_path)})
+
+
+@app.route("/api/track")
+def api_track():
+    """返回滚动复盘累计胜率与最近结算记录"""
+    stats = tracker.cumulative_stats()
+    records = tracker._load()
+    settled = sorted(
+        [r for r in records if r.get("settled")],
+        key=lambda r: r.get("settle_date") or "",
+        reverse=True,
+    )[:10]
+    return jsonify({"ok": True, "stats": stats, "recent": settled})
 
 
 if __name__ == "__main__":
