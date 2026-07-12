@@ -7,8 +7,10 @@ import requests
 import pandas as pd
 from datetime import datetime
 
+from . import tracker
 
-def generate_report(top_df: pd.DataFrame, date_str: str = None) -> str:
+
+def generate_report(top_df: pd.DataFrame, date_str: str = None, newly_settled: list = None) -> str:
     if date_str is None:
         date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -22,7 +24,38 @@ def generate_report(top_df: pd.DataFrame, date_str: str = None) -> str:
         f"# 14:40 尾盘选股报告 {date_str}",
         "",
         f"> 生成时间：{now_str}  ",
-        f"> 策略：涨幅3-5%、量比≥1、换手率5-10%、振幅≤8%、站上MA20、量能放大  ",
+        f"> 策略：涨幅2-7%、量比≥1.5、收盘强度≥70%、上影线≤2%、均线多头  ",
+        "",
+        "## 🔁 滚动复盘",
+        "",
+    ]
+
+    stats = tracker.cumulative_stats()
+    if newly_settled:
+        lines.append("**上次选股结算：**")
+        lines.append("")
+        lines.append("| 代码 | 名称 | 选股价 | 结算价 | 收益 | 胜负 |")
+        lines.append("| :--: | :--: | ----: | ----: | ----: | :--: |")
+        for rec in newly_settled:
+            mark = "✅胜" if rec["win"] else "❌负"
+            lines.append(
+                f"| {rec['code']} | {rec['name']} | {rec['pick_price']:.2f} | "
+                f"{rec['settle_price']:.2f} | {rec['return_pct']:+.2f}% | {mark} |"
+            )
+        lines.append("")
+    else:
+        lines.append("暂无待结算记录。")
+        lines.append("")
+
+    if stats["total"] > 0:
+        lines.append(
+            f"**累计胜率：{stats['win_rate']}%**（{stats['wins']}/{stats['total']}）"
+            f"，平均收益 {stats['avg_return']:+.2f}%"
+        )
+    else:
+        lines.append("累计胜率：暂无历史数据")
+
+    lines += [
         "",
         "## TOP3 推荐",
         "",
@@ -78,7 +111,7 @@ def generate_report(top_df: pd.DataFrame, date_str: str = None) -> str:
     return report_path
 
 
-def push_serverchan(send_key: str, top_df: pd.DataFrame, date_str: str = None) -> bool:
+def push_serverchan(send_key: str, top_df: pd.DataFrame, date_str: str = None, newly_settled: list = None) -> bool:
     """Server酱微信推送（sct.ftqq.com）"""
     if not send_key or send_key.strip() == "":
         print("[reporter] 未配置 SERVERCHAN_KEY，跳过微信推送")
@@ -91,7 +124,20 @@ def push_serverchan(send_key: str, top_df: pd.DataFrame, date_str: str = None) -
 
     title = f"📊 {date_str} 尾盘选股 TOP3 出炉"
 
-    rows = []
+    rows = ["### 🔁 滚动复盘", ""]
+    stats = tracker.cumulative_stats()
+    if newly_settled:
+        for rec in newly_settled:
+            mark = "✅" if rec["win"] else "❌"
+            rows.append(f"{mark} {rec['name']}（{rec['code']}） {rec['return_pct']:+.2f}%  ")
+    else:
+        rows.append("暂无待结算记录  ")
+    if stats["total"] > 0:
+        rows.append(f"**累计胜率：{stats['win_rate']}%**（{stats['wins']}/{stats['total']}），平均收益 {stats['avg_return']:+.2f}%  ")
+    rows.append("")
+    rows.append("### 🎯 今日推荐")
+    rows.append("")
+
     if top3.empty:
         rows.append("今日无满足条件的标的")
     else:

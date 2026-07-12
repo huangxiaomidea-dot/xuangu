@@ -11,7 +11,7 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from src import fetcher, factors, backtest, reporter
+from src import fetcher, factors, backtest, reporter, tracker
 
 
 def load_config() -> dict:
@@ -26,6 +26,8 @@ def main():
     print(f"=== 运行时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     print("=" * 50)
 
+    date_str = datetime.now().strftime("%Y-%m-%d")
+
     try:
         cfg = load_config()
     except Exception as e:
@@ -39,8 +41,11 @@ def main():
         sys.exit(1)
     print(f"[main] 获取到 {len(snapshot_df)} 条数据，开始计算因子...")
 
-    print("\n[步骤2] 预筛选 + 获取历史K线...")
-    # 注意：预筛选只按涨跌幅，不能注量比——量比需要历史K线才能计算，此时尚为默认值
+    print("\n[步骤2] 滚动复盘：结算历史待结算选股...")
+    newly_settled = tracker.settle_pending(snapshot_df, date_str)
+    print(tracker.format_rolling_summary(newly_settled))
+
+    print("\n[步骤3] 预筛选 + 获取历史K线...")
     pre_filter = snapshot_df[
         (snapshot_df["涨跌幅"] >= cfg["factors"]["change_pct_min"]) &
         (snapshot_df["涨跌幅"] <= cfg["factors"]["change_pct_max"])
@@ -54,13 +59,12 @@ def main():
         print("[main] 初筛无候选股，将对全量使用快照因子计算")
         hist_dict = {}
 
-    print("\n[步骤3] 计算因子概率分...")
+    print("\n[步骤4] 计算因子概率分...")
     top10_df = factors.compute_scores(snapshot_df, hist_dict, top_n=10)
 
     if top10_df.empty:
         print("[main] 未筛选出任何候选股，程序退出")
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        reporter.generate_report(top10_df, date_str)
+        reporter.generate_report(top10_df, date_str, newly_settled=newly_settled)
         print("\n=== 完成（无候选股） ===")
         return
 
@@ -72,23 +76,25 @@ def main():
     top3_df = top10_df.head(3)
     print(f"\n[main] 今日推荐 TOP3：{top3_df['名称'].tolist()}")
 
-    print("\n[步骤4] 历史回测...")
+    # 记录今日选股为待结算（下次运行时结算）
+    tracker.record_picks(top3_df, date_str)
+
+    print("\n[步骤5] 历史回测...")
     backtest.backtest_check(hist_dict, cfg)
 
-    print("\n[步骤5] 生成选股报告...")
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    report_path = reporter.generate_report(top10_df, date_str)
+    print("\n[步骤6] 生成选股报告...")
+    report_path = reporter.generate_report(top10_df, date_str, newly_settled=newly_settled)
 
     serverchan_key = os.environ.get("SERVERCHAN_KEY", "").strip()
     if serverchan_key:
-        print("\n[步骤6] Server酱微信推送...")
-        reporter.push_serverchan(serverchan_key, top3_df, date_str)
+        print("\n[步骤7] Server酱微信推送...")
+        reporter.push_serverchan(serverchan_key, top3_df, date_str, newly_settled=newly_settled)
     else:
-        print("\n[步骤6] 未配置 SERVERCHAN_KEY，跳过微信推送")
+        print("\n[步骤7] 未配置 SERVERCHAN_KEY，跳过微信推送")
 
     feishu_url = cfg.get("feishu_webhook", "").strip()
     if feishu_url:
-        print("\n[步骤7] 推送飞书通知...")
+        print("\n[步骤8] 推送飞书通知...")
         reporter.push_feishu(feishu_url, top3_df, date_str)
 
     print("\n" + "=" * 50)
