@@ -525,29 +525,25 @@ function pollStatus() {
   }).catch(()=>{});
 }
 
-// 滚动复盘面板
-function renderTrackPanel(stats, recent) {
+// 滚动复盘面板（TOP3整体 + 首选，两个成功率）
+function renderTrackPanel(statsTop3, statsTop1, recent) {
   let html;
-  if (!stats || stats.total === 0) {
-    html = '<span>📊 滚动复盘：暂无历史结算数据，明日起开始累计</span>';
+  if ((!statsTop3 || statsTop3.total === 0) && (!statsTop1 || statsTop1.total === 0)) {
+    html = '<span>📊 滚动复盘：暂无历史结算数据（次日9:30-9:40开盘窗口结算）</span>';
   } else {
-    const wrClass = stats.win_rate >= 55 ? 'up' : 'down';
-    const arClass = stats.avg_return >= 0 ? 'up' : 'down';
-    html = `
-      <div class="track-stat">
-        <span class="tv-label">累计胜率</span>
-        <span class="tv-value ${wrClass}">${stats.win_rate}%</span>
-      </div>
-      <div class="track-stat">
-        <span class="tv-label">样本数</span>
-        <span class="tv-value">${stats.wins}/${stats.total}</span>
-      </div>
-      <div class="track-stat">
-        <span class="tv-label">平均收益</span>
-        <span class="tv-value ${arClass}">${stats.avg_return>=0?'+':''}${stats.avg_return}%</span>
-      </div>
-      <div class="track-recent">${(recent||[]).slice(0,6).map(r=>
-        `<span class="track-chip ${r.win?'win':'loss'}">${r.win?'✅':'❌'} ${r.name} ${r.return_pct>=0?'+':''}${r.return_pct}%</span>`
+    const mkStat = (label, s) => {
+      if (!s || s.total === 0) {
+        return `<div class="track-stat"><span class="tv-label">${label}</span><span class="tv-value">--</span></div>`;
+      }
+      const cls = s.win_rate >= 55 ? 'up' : 'down';
+      return `<div class="track-stat">
+        <span class="tv-label">${label}（${s.wins}/${s.total}）</span>
+        <span class="tv-value ${cls}">${s.win_rate}%</span>
+      </div>`;
+    };
+    html = mkStat('TOP3成功率', statsTop3) + mkStat('首选成功率', statsTop1) +
+      `<div class="track-recent">${(recent||[]).slice(0,6).map(r=>
+        `<span class="track-chip ${r.win?'win':'loss'}">${r.win?'✅':'❌'}${r.rank===1?'【首选】':''} ${r.name} ${r.return_pct>=0?'+':''}${r.return_pct}%</span>`
       ).join('')}</div>`;
   }
   ['track-panel','track-panel-m'].forEach(id=>{
@@ -558,7 +554,7 @@ function renderTrackPanel(stats, recent) {
 
 function pollTrack() {
   fetch('/api/track').then(r=>r.json()).then(j=>{
-    if (j.ok) renderTrackPanel(j.stats, j.recent);
+    if (j.ok) renderTrackPanel(j.stats_top3, j.stats_top1, j.recent);
   }).catch(()=>{});
 }
 

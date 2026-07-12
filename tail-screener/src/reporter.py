@@ -30,16 +30,20 @@ def generate_report(top_df: pd.DataFrame, date_str: str = None, newly_settled: l
         "",
     ]
 
-    stats = tracker.cumulative_stats()
+    top3_stats = tracker.cumulative_stats()
+    top1_stats = tracker.cumulative_stats(rank_filter=1)
+    lines.append("> 结算规则：次日 9:30-9:40 开盘窗口内涨幅摸到 +0.1% 即算成功  ")
+    lines.append("")
     if newly_settled:
-        lines.append("**上次选股结算：**")
+        lines.append("**最新结算：**")
         lines.append("")
-        lines.append("| 代码 | 名称 | 选股价 | 结算价 | 收益 | 胜负 |")
-        lines.append("| :--: | :--: | ----: | ----: | ----: | :--: |")
-        for rec in newly_settled:
+        lines.append("| 排名 | 代码 | 名称 | 选股价 | 结算价 | 收益 | 胜负 |")
+        lines.append("| :--: | :--: | :--: | ----: | ----: | ----: | :--: |")
+        for rec in sorted(newly_settled, key=lambda r: r.get("rank", 9)):
             mark = "✅胜" if rec["win"] else "❌负"
+            tag = "首选" if rec.get("rank") == 1 else str(rec.get("rank", "-"))
             lines.append(
-                f"| {rec['code']} | {rec['name']} | {rec['pick_price']:.2f} | "
+                f"| {tag} | {rec['code']} | {rec['name']} | {rec['pick_price']:.2f} | "
                 f"{rec['settle_price']:.2f} | {rec['return_pct']:+.2f}% | {mark} |"
             )
         lines.append("")
@@ -47,13 +51,19 @@ def generate_report(top_df: pd.DataFrame, date_str: str = None, newly_settled: l
         lines.append("暂无待结算记录。")
         lines.append("")
 
-    if stats["total"] > 0:
+    if top3_stats["total"] > 0:
         lines.append(
-            f"**累计胜率：{stats['win_rate']}%**（{stats['wins']}/{stats['total']}）"
-            f"，平均收益 {stats['avg_return']:+.2f}%"
+            f"**TOP3累计成功率：{top3_stats['win_rate']}%**（{top3_stats['wins']}/{top3_stats['total']}）"
         )
     else:
-        lines.append("累计胜率：暂无历史数据")
+        lines.append("TOP3累计成功率：暂无历史数据")
+
+    if top1_stats["total"] > 0:
+        lines.append(
+            f"**首选累计成功率：{top1_stats['win_rate']}%**（{top1_stats['wins']}/{top1_stats['total']}）"
+        )
+    else:
+        lines.append("首选累计成功率：暂无历史数据")
 
     lines += [
         "",
@@ -124,16 +134,20 @@ def push_serverchan(send_key: str, top_df: pd.DataFrame, date_str: str = None, n
 
     title = f"📊 {date_str} 尾盘选股 TOP3 出炉"
 
-    rows = ["### 🔁 滚动复盘", ""]
-    stats = tracker.cumulative_stats()
+    rows = ["### 🔁 滚动复盘（次日9:30-9:40摸到+0.1%算成功）", ""]
+    top3_stats = tracker.cumulative_stats()
+    top1_stats = tracker.cumulative_stats(rank_filter=1)
     if newly_settled:
-        for rec in newly_settled:
+        for rec in sorted(newly_settled, key=lambda r: r.get("rank", 9)):
             mark = "✅" if rec["win"] else "❌"
-            rows.append(f"{mark} {rec['name']}（{rec['code']}） {rec['return_pct']:+.2f}%  ")
+            tag = "【首选】" if rec.get("rank") == 1 else ""
+            rows.append(f"{mark} {tag}{rec['name']}（{rec['code']}） {rec['return_pct']:+.2f}%  ")
     else:
         rows.append("暂无待结算记录  ")
-    if stats["total"] > 0:
-        rows.append(f"**累计胜率：{stats['win_rate']}%**（{stats['wins']}/{stats['total']}），平均收益 {stats['avg_return']:+.2f}%  ")
+    if top3_stats["total"] > 0:
+        rows.append(f"**TOP3累计成功率：{top3_stats['win_rate']}%**（{top3_stats['wins']}/{top3_stats['total']}）  ")
+    if top1_stats["total"] > 0:
+        rows.append(f"**首选累计成功率：{top1_stats['win_rate']}%**（{top1_stats['wins']}/{top1_stats['total']}）  ")
     rows.append("")
     rows.append("### 🎯 今日推荐")
     rows.append("")

@@ -41,8 +41,8 @@ def main():
         sys.exit(1)
     print(f"[main] 获取到 {len(snapshot_df)} 条数据，开始计算因子...")
 
-    print("\n[步骤2] 滚动复盘：结算历史待结算选股...")
-    newly_settled = tracker.settle_pending(snapshot_df, date_str)
+    print("\n[步骤2] 滚动复盘：结算次日9:30-9:40开盘窗口涨跌...")
+    newly_settled = tracker.settle_pending_open_window()
     print(tracker.format_rolling_summary(newly_settled))
 
     print("\n[步骤3] 预筛选 + 获取历史K线...")

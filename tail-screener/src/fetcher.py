@@ -130,6 +130,43 @@ def get_hist_k(symbol: str, days: int = 60) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def get_intraday_5min(symbol: str, datalen: int = 800) -> pd.DataFrame:
+    """
+    获取5分钟K线（用于结算次日9:30-9:35开盘窗口涨跌）。
+    新浪 scale=5 返回的 day 字段是完整时间戳，如 "2026-07-13 09:35:00"
+    """
+    code = str(symbol).zfill(6)
+    full = f"sh{code}" if code.startswith(("6", "9")) else f"sz{code}"
+    for attempt in range(3):
+        try:
+            resp = requests.get(
+                _HIST_URL,
+                params={"symbol": full, "scale": 5, "ma": "no", "datalen": datalen},
+                headers=_HEADERS, timeout=15,
+            )
+            raw = resp.text.strip()
+            if not raw or raw == "null":
+                return pd.DataFrame()
+            data = json.loads(raw)
+            if not data:
+                return pd.DataFrame()
+            df = pd.DataFrame(data)
+            df.rename(columns={
+                "day": "时间", "open": "开盘", "close": "收盘",
+                "high": "最高", "low": "最低", "volume": "成交量"
+            }, inplace=True)
+            for col in ["开盘", "收盘", "最高", "最低", "成交量"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+            df["时间"] = pd.to_datetime(df["时间"])
+            return df.sort_values("时间").reset_index(drop=True)
+        except Exception as e:
+            print(f"[fetcher] get_intraday_5min({symbol}) 异常({attempt+1}): {e}")
+            if attempt < 2:
+                time.sleep(1)
+    return pd.DataFrame()
+
+
 def batch_get_hist(symbols: list, days: int = 60) -> dict:
     hist_dict = {}
     total = len(symbols)
