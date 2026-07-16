@@ -124,6 +124,9 @@ header .meta { color: var(--muted); font-size: 11px; }
 .track-stat .tv-value { font-size: 16px; font-weight: 700; }
 .track-stat .tv-value.up { color: var(--red); }
 .track-stat .tv-value.down { color: var(--green); }
+.track-stat .tv-sub { font-size: 10px; margin-top: 1px; }
+.track-stat .tv-sub.up { color: var(--red); }
+.track-stat .tv-sub.down { color: var(--green); }
 .track-recent { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .track-chip {
   font-size: 11px; padding: 3px 8px; border-radius: 12px;
@@ -547,9 +550,12 @@ function renderTrackPanel(statsTop3, statsTop1, recent) {
         return `<div class="track-stat"><span class="tv-label">${label}</span><span class="tv-value">--</span></div>`;
       }
       const cls = s.win_rate >= 55 ? 'up' : 'down';
+      const arClass = s.avg_return >= 0 ? 'up' : 'down';
+      const arText = s.avg_return != null ? `${s.avg_return>=0?'+':''}${s.avg_return}%` : '--';
       return `<div class="track-stat">
         <span class="tv-label">${label}（${s.wins}/${s.total}）</span>
         <span class="tv-value ${cls}">${s.win_rate}%</span>
+        <span class="tv-sub ${arClass}">均收益 ${arText}</span>
       </div>`;
     };
     html = mkStat('TOP3成功率', statsTop3) + mkStat('首选成功率', statsTop1) +
@@ -590,9 +596,12 @@ function renderBacktestPanel(state, data) {
         return `<div class="track-stat"><span class="tv-label">${label}</span><span class="tv-value">--</span></div>`;
       }
       const cls = s.win_rate >= 55 ? 'up' : 'down';
+      const arClass = s.avg_return >= 0 ? 'up' : 'down';
+      const arText = s.avg_return != null ? `${s.avg_return>=0?'+':''}${s.avg_return}%` : '--';
       return `<div class="track-stat">
         <span class="tv-label">${label}（${s.wins}/${s.total}）</span>
         <span class="tv-value ${cls}">${s.win_rate}%</span>
+        <span class="tv-sub ${arClass}">均收益 ${arText}</span>
       </div>`;
     };
     html = `<span class="backtest-meta">📈 近${data.lookback_days}日回测（${data.generated_at}，样本${data.sample_stocks}只）</span>` +
