@@ -46,7 +46,14 @@ def _parse_report_md(md_path: str) -> dict:
     except Exception:
         return {}
 
-    date_str = Path(md_path).stem
+    run_id = Path(md_path).stem
+    # run_id 格式：YYYY-MM-DD_HHMMSS（新版）或 YYYY-MM-DD（旧版兼容）
+    if "_" in run_id:
+        date_part, time_part = run_id.split("_", 1)
+        display_time = f"{date_part} {time_part[:2]}:{time_part[2:4]}"
+    else:
+        date_part, display_time = run_id, run_id
+    date_str = run_id
 
     # 提取 TOP3 表格行
     top3 = []
@@ -94,7 +101,12 @@ def _parse_report_md(md_path: str) -> dict:
                     "score":    cols[7] if len(cols) > 7 else "",
                 })
 
-    return {"date": date_str, "top3": top3, "top10": top10, "raw": text}
+    return {
+        "date": date_str,          # 完整 run_id，用于 API 查询定位
+        "date_part": date_part,    # 纯日期部分，用于展示
+        "display_time": display_time,  # 友好展示文本，如 "2026-07-16 14:40"
+        "top3": top3, "top10": top10, "raw": text,
+    }
 
 
 def _list_reports() -> list:
@@ -243,13 +255,13 @@ def api_report_latest():
     return jsonify({"ok": True, "data": _parse_report_md(md_path)})
 
 
-@app.route("/api/report/<date_str>")
-def api_report(date_str):
-    """返回指定日期报告数据"""
-    # 简单防注入：只允许 YYYY-MM-DD 格式
-    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
-        return jsonify({"ok": False, "msg": "日期格式错误"}), 400
-    md_path = os.path.join(NOTES_DIR, f"{date_str}.md")
+@app.route("/api/report/<run_id>")
+def api_report(run_id):
+    """返回指定运行记录的报告数据（run_id 格式：YYYY-MM-DD_HHMMSS，兼容旧版纯日期格式）"""
+    # 简单防注入：只允许 YYYY-MM-DD 或 YYYY-MM-DD_HHMMSS 格式
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(_\d{6})?", run_id):
+        return jsonify({"ok": False, "msg": "报告标识格式错误"}), 400
+    md_path = os.path.join(NOTES_DIR, f"{run_id}.md")
     if not os.path.exists(md_path):
         return jsonify({"ok": False, "msg": "报告不存在"})
     return jsonify({"ok": True, "data": _parse_report_md(md_path)})

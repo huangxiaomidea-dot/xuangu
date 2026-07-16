@@ -465,7 +465,7 @@ function renderReport(data, targetId) {
     </tr>`;
   });
   area.innerHTML = `
-    <div class="report-date">${data.date}
+    <div class="report-date">${data.display_time||data.date}
       <span class="badge">共 ${data.top10?.length||0} 只候选</span></div>
     <div class="section-title">TOP 3 推荐</div>
     <div class="top3-grid">${cards||'<p style="color:var(--muted)">无数据</p>'}</div>
@@ -485,14 +485,23 @@ function renderBothReports(data) {
 }
 
 // 报告列表
+function fmtRunId(runId) {
+  // run_id 格式：YYYY-MM-DD_HHMMSS（新版）或 YYYY-MM-DD（旧版兼容）
+  if (runId.includes('_')) {
+    const [datePart, timePart] = runId.split('_');
+    return `${datePart} ${timePart.slice(0,2)}:${timePart.slice(2,4)}`;
+  }
+  return runId;
+}
+
 function renderReportList(reports) {
   ['report-list','report-list-m'].forEach(id => {
     const list = document.getElementById(id);
     if (!list) return;
     if (!reports?.length) { list.innerHTML = '<div class="report-empty">暂无报告</div>'; return; }
     list.innerHTML = reports.map(d=>`
-      <div class="report-item ${d===currentReport?'active':''}" onclick="loadReport('${d}')">
-        <div class="dot"></div><span>${d}</span>
+      <div class="report-item ${d===currentReport?'active':''}" data-run-id="${d}" onclick="loadReport('${d}')">
+        <div class="dot"></div><span>${fmtRunId(d)}</span>
       </div>`).join('');
   });
 }
@@ -506,7 +515,7 @@ function loadReport(date) {
     }
   });
   document.querySelectorAll('.report-item').forEach(el=>{
-    el.classList.toggle('active', el.querySelector('span').textContent===date);
+    el.classList.toggle('active', el.dataset.runId===date);
   });
 }
 

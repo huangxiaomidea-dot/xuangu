@@ -11,14 +11,20 @@ from . import tracker
 
 
 def generate_report(top_df: pd.DataFrame, date_str: str = None, newly_settled: list = None) -> str:
+    """
+    每次运行生成独立报告文件（文件名含运行时间戳），避免同一天多次运行
+    （手动点击 + 14:40/14:50 自动运行）互相覆盖，历史记录全部保留
+    """
+    now = datetime.now()
     if date_str is None:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = now.strftime("%Y-%m-%d")
+    run_id = now.strftime("%Y-%m-%d_%H%M%S")
 
     notes_dir = os.path.join(os.path.dirname(__file__), "..", "notes")
     os.makedirs(notes_dir, exist_ok=True)
-    report_path = os.path.join(notes_dir, f"{date_str}.md")
+    report_path = os.path.join(notes_dir, f"{run_id}.md")
 
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    now_str = now.strftime("%Y-%m-%d %H:%M")
 
     lines = [
         f"# 14:40 尾盘选股报告 {date_str}",
