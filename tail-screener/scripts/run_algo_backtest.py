@@ -76,22 +76,28 @@ def compute_daily_factors(hist: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
     f_change_pct = ((change_pct >= f["change_pct_min"]) & (change_pct <= f["change_pct_max"])).astype(float)
     f_volume_ratio = (volume_ratio >= f["volume_ratio_min"]).astype(float)
-    f_close_strength = (close_strength >= f["close_strength_min"]).astype(float)
-    f_upper_shadow = (upper_shadow <= f["upper_shadow_max"]).astype(float)
     f_above_ma20 = (close > ma20).astype(float)
     f_ma_trend = ((ma5 > ma10) & (ma10 > ma20)).astype(float)
     f_vol_gt_ma5 = (vol > vol_ma5).astype(float)
-    f_extend_5d = (extend_5d <= f["extend_5d_max"]).astype(float)
+
+    # 连续分级打分（与 src/factors.py 的线上打分逻辑保持一致，避免二元达标导致大量同分）
+    change_mid = (f["change_pct_min"] + f["change_pct_max"]) / 2
+    change_half = (f["change_pct_max"] - f["change_pct_min"]) / 2
+    s_change_pct = (1 - (change_pct - change_mid).abs() / change_half).clip(0, 1)
+    s_volume_ratio = (volume_ratio / (f["volume_ratio_min"] * 1.5)).clip(0, 1)
+    s_close_strength = close_strength.clip(0, 1)
+    s_upper_shadow = (1 - upper_shadow / f["upper_shadow_max"]).clip(0, 1)
+    s_extend_5d = (1 - extend_5d.clip(lower=0) / f["extend_5d_max"]).clip(0, 1)
 
     score = (
-        f_change_pct * w["change_pct"] * 100 +
-        f_volume_ratio * w["volume_ratio"] * 100 +
-        f_close_strength * w["close_strength"] * 100 +
-        f_upper_shadow * w["upper_shadow"] * 100 +
-        f_ma_trend * w["ma_trend"] * 100 +
-        f_above_ma20 * w["above_ma20"] * 100 +
-        f_vol_gt_ma5 * w["vol_gt_ma5"] * 100 +
-        f_extend_5d * w["extend_5d"] * 100
+        s_change_pct.fillna(0) * w["change_pct"] * 100 +
+        s_volume_ratio.fillna(0) * w["volume_ratio"] * 100 +
+        s_close_strength.fillna(0) * w["close_strength"] * 100 +
+        s_upper_shadow.fillna(0) * w["upper_shadow"] * 100 +
+        f_ma_trend.fillna(0.5) * w["ma_trend"] * 100 +
+        f_above_ma20.fillna(0.5) * w["above_ma20"] * 100 +
+        f_vol_gt_ma5.fillna(0.5) * w["vol_gt_ma5"] * 100 +
+        s_extend_5d.fillna(0.5) * w["extend_5d"] * 100
     )
 
     qualified = (f_change_pct == 1) & (f_volume_ratio == 1)

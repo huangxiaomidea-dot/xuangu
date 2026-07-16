@@ -7,6 +7,9 @@
   - 上影线短：(最高-最新价) / 最新价 < 2%（上方压力小）
   - 量比 ≥ 2.0，均线多头排列
   - 近5日累计涨幅 ≤ 12%（避免追高已经连续上涨的股票，降低次日回调风险）
+
+打分方式：达标门槛（f_*）用于初筛候选股，但最终概率分用连续分级（s_*）计算——
+避免"只要达标就满分"导致大量股票同分、排名第一变成随机的问题，让排名真正反映信号强弱。
 """
 
 import pandas as pd
@@ -111,16 +114,31 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
     df["f_vol_gt_ma5"] = df["f_vol_gt_ma5"].fillna(0.5)
     df["f_extend_5d"]  = df["f_extend_5d"].fillna(0.5)
 
+    # ── 连续分级打分（避免二元达标导致大量同分、排名失去意义）──
+    change_mid = (f["change_pct_min"] + f["change_pct_max"]) / 2
+    change_half = (f["change_pct_max"] - f["change_pct_min"]) / 2
+    s_change_pct = (1 - (df["涨跌幅"] - change_mid).abs() / change_half).clip(0, 1)
+
+    s_volume_ratio = (df["量比"] / (f["volume_ratio_min"] * 1.5)).clip(0, 1)
+
+    s_close_strength = close_strength.clip(0, 1).fillna(0)
+
+    s_upper_shadow = (1 - upper_shadow / f["upper_shadow_max"]).clip(0, 1)
+
+    extend_val = df["5日累计涨幅%"]
+    s_extend_5d = (1 - extend_val.clip(lower=0) / f["extend_5d_max"]).clip(0, 1)
+    s_extend_5d = s_extend_5d.fillna(0.5)  # 无历史数据时中性
+
     df["概率分"] = (
-        df["f_change_pct"]    * w["change_pct"]    * 100 +
-        df["f_volume_ratio"]  * w["volume_ratio"]  * 100 +
-        df["f_close_strength"]* w["close_strength"] * 100 +
-        df["f_upper_shadow"]  * w["upper_shadow"]   * 100 +
-        df["f_ma_trend"]      * w["ma_trend"]       * 100 +
-        df["f_above_ma20"]    * w["above_ma20"]     * 100 +
-        df["f_vol_gt_ma5"]    * w["vol_gt_ma5"]     * 100 +
-        df["f_extend_5d"]     * w["extend_5d"]      * 100
-    ).round(1)
+        s_change_pct       * w["change_pct"]    * 100 +
+        s_volume_ratio     * w["volume_ratio"]  * 100 +
+        s_close_strength   * w["close_strength"] * 100 +
+        s_upper_shadow      * w["upper_shadow"]   * 100 +
+        df["f_ma_trend"]    * w["ma_trend"]       * 100 +
+        df["f_above_ma20"]  * w["above_ma20"]     * 100 +
+        df["f_vol_gt_ma5"]  * w["vol_gt_ma5"]     * 100 +
+        s_extend_5d         * w["extend_5d"]      * 100
+    ).round(2)
 
     def hit_desc(row):
         hits = []
