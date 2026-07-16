@@ -160,9 +160,9 @@ def _run_algo_backtest():
     _backtest_state["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         proc = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "run_algo_backtest.py")],
+            [sys.executable, "-u", os.path.join(SCRIPTS_DIR, "run_algo_backtest.py")],
             cwd=ROOT, timeout=10800,  # 全市场扫描耗时较长，放宽到3小时
-        )
+        )  # -u 禁用输出缓冲，进度可实时通过 journalctl -u tail-screener-web -f 查看
         _backtest_state["last_status"] = "success" if proc.returncode == 0 else "error"
     except Exception:
         _backtest_state["last_status"] = "error"
