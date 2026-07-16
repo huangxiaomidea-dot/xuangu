@@ -7,22 +7,24 @@ market:
 
 factors:
   change_pct_min: 2
-  change_pct_max: 7
-  volume_ratio_min: 1.5
+  change_pct_max: 5
+  volume_ratio_min: 2.0
   turnover_min: 3
   turnover_max: 10
   amplitude_max: 8
-  close_strength_min: 0.7
+  close_strength_min: 0.75
   upper_shadow_max: 2.0
   vol_gt_ma5_ratio: 1.0
+  extend_5d_max: 12
 
 weights:
-  change_pct: 0.10
+  change_pct: 0.05
   volume_ratio: 0.20
   close_strength: 0.20
   upper_shadow: 0.15
-  ma_trend: 0.15
+  ma_trend: 0.10
   above_ma20: 0.10
   vol_gt_ma5: 0.10
+  extend_5d: 0.10
 
 feishu_webhook: ""

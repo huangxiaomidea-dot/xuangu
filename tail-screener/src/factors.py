@@ -3,9 +3,10 @@
 目标：14:40尾盘选股，预测次日开盘前5分钟上涨概率最大的股票
 
 关键因子：
-  - 收盘强度：(最新价-最低) / (最高-最低) ≥ 0.7（尾盘收在当日区间上70%）
+  - 收盘强度：(最新价-最低) / (最高-最低) ≥ 0.75（尾盘收在当日区间上75%）
   - 上影线短：(最高-最新价) / 最新价 < 2%（上方压力小）
-  - 量比 ≥ 1.5，均线多头排列
+  - 量比 ≥ 2.0，均线多头排列
+  - 近5日累计涨幅 ≤ 12%（避免追高已经连续上涨的股票，降低次日回调风险）
 """
 
 import pandas as pd
@@ -45,16 +46,16 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
                 if vol_ma5 > 0:
                     df.at[idx, "量比"] = round(cur_vol / vol_ma5, 2)
 
-    # 因子1：涨幅 2%~7%
+    # 因子1：涨幅 2%~5%
     df["f_change_pct"] = (
         (df["涨跌幅"] >= f["change_pct_min"]) &
         (df["涨跌幅"] <= f["change_pct_max"])
     ).astype(float)
 
-    # 因子2：量比 >= 1.5
+    # 因子2：量比 >= 2.0
     df["f_volume_ratio"] = (df["量比"] >= f["volume_ratio_min"]).astype(float)
 
-    # 因子3：收盘强度 = (最新价-最低) / (最高-最低) ≥ 0.7
+    # 因子3：收盘强度 = (最新价-最低) / (最高-最低) ≥ 0.75
     price_range = df["最高"] - df["最低"]
     close_strength = (df["最新价"] - df["最低"]) / price_range.replace(0, np.nan)
     df["f_close_strength"] = (close_strength >= f["close_strength_min"]).astype(float)
@@ -66,9 +67,11 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
     df["上影线%"] = upper_shadow.round(2)
 
     # 历史K线因子
-    df["f_ma_trend"]   = np.nan
-    df["f_above_ma20"] = np.nan
-    df["f_vol_gt_ma5"] = np.nan
+    df["f_ma_trend"]    = np.nan
+    df["f_above_ma20"]  = np.nan
+    df["f_vol_gt_ma5"]  = np.nan
+    df["f_extend_5d"]   = np.nan
+    df["5日累计涨幅%"] = np.nan
 
     if hist_dict:
         for idx, row in df.iterrows():
@@ -80,13 +83,20 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
             vol_col   = next((c for c in ["成交量", "volume"] if c in hist.columns), None)
             if close_col:
                 closes = pd.to_numeric(hist[close_col], errors="coerce").dropna()
+                cur = row["最新价"]
                 if len(closes) >= 20:
                     ma5  = closes.iloc[-5:].mean()
                     ma10 = closes.iloc[-10:].mean()
                     ma20 = closes.iloc[-20:].mean()
-                    cur  = row["最新价"]
                     df.at[idx, "f_above_ma20"] = 1.0 if cur > ma20 else 0.0
                     df.at[idx, "f_ma_trend"]   = 1.0 if (ma5 > ma10 > ma20) else 0.0
+                # 近5日累计涨幅（避免追高已经连续上涨的股票）
+                if len(closes) >= 5:
+                    close_5d_ago = closes.iloc[-5]
+                    if close_5d_ago > 0:
+                        extend_pct = (cur - close_5d_ago) / close_5d_ago * 100
+                        df.at[idx, "5日累计涨幅%"] = round(extend_pct, 2)
+                        df.at[idx, "f_extend_5d"] = 1.0 if extend_pct <= f["extend_5d_max"] else 0.0
             if vol_col:
                 vols = pd.to_numeric(hist[vol_col], errors="coerce").dropna()
                 cur_vol_col = next((c for c in ["成交量", "volume"] if c in df.columns), None)
@@ -99,6 +109,7 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
     df["f_ma_trend"]   = df["f_ma_trend"].fillna(0.5)
     df["f_above_ma20"] = df["f_above_ma20"].fillna(0.5)
     df["f_vol_gt_ma5"] = df["f_vol_gt_ma5"].fillna(0.5)
+    df["f_extend_5d"]  = df["f_extend_5d"].fillna(0.5)
 
     df["概率分"] = (
         df["f_change_pct"]    * w["change_pct"]    * 100 +
@@ -107,7 +118,8 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
         df["f_upper_shadow"]  * w["upper_shadow"]   * 100 +
         df["f_ma_trend"]      * w["ma_trend"]       * 100 +
         df["f_above_ma20"]    * w["above_ma20"]     * 100 +
-        df["f_vol_gt_ma5"]    * w["vol_gt_ma5"]     * 100
+        df["f_vol_gt_ma5"]    * w["vol_gt_ma5"]     * 100 +
+        df["f_extend_5d"]     * w["extend_5d"]      * 100
     ).round(1)
 
     def hit_desc(row):
@@ -119,6 +131,7 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
         if row["f_above_ma20"] == 1:     hits.append("站上MA20")
         if row["f_ma_trend"] == 1:       hits.append("均线多头")
         if row["f_vol_gt_ma5"] == 1:     hits.append("量能放大")
+        if row["f_extend_5d"] == 1:      hits.append("未追高")
         return "、".join(hits) if hits else "无"
 
     df["命中因子"] = df.apply(hit_desc, axis=1)
