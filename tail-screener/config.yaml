@@ -20,11 +20,12 @@ factors:
 weights:
   change_pct: 0.05
   volume_ratio: 0.20
-  close_strength: 0.20
+  close_strength: 0.25
   upper_shadow: 0.15
-  ma_trend: 0.10
-  above_ma20: 0.10
+  ma_trend: 0.05
+  above_ma20: 0.05
   vol_gt_ma5: 0.10
   extend_5d: 0.10
+  turnover: 0.05
 
 feishu_webhook: ""

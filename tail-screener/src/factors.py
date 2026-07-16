@@ -69,6 +69,9 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
     df["f_upper_shadow"] = (upper_shadow <= f["upper_shadow_max"]).astype(float)
     df["上影线%"] = upper_shadow.round(2)
 
+    # 因子：换手率（资金关注度，过低没人气/过高情绪过热，中枢最佳）
+    turnover = df["换手率"]
+
     # 历史K线因子
     df["f_ma_trend"]    = np.nan
     df["f_above_ma20"]  = np.nan
@@ -129,6 +132,10 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
     s_extend_5d = (1 - extend_val.clip(lower=0) / f["extend_5d_max"]).clip(0, 1)
     s_extend_5d = s_extend_5d.fillna(0.5)  # 无历史数据时中性
 
+    turnover_mid = (f["turnover_min"] + f["turnover_max"]) / 2
+    turnover_half = (f["turnover_max"] - f["turnover_min"]) / 2
+    s_turnover = (1 - (turnover - turnover_mid).abs() / turnover_half).clip(0, 1).fillna(0)
+
     df["概率分"] = (
         s_change_pct       * w["change_pct"]    * 100 +
         s_volume_ratio     * w["volume_ratio"]  * 100 +
@@ -137,7 +144,8 @@ def compute_scores(snapshot_df: pd.DataFrame, hist_dict: dict = None, top_n: int
         df["f_ma_trend"]    * w["ma_trend"]       * 100 +
         df["f_above_ma20"]  * w["above_ma20"]     * 100 +
         df["f_vol_gt_ma5"]  * w["vol_gt_ma5"]     * 100 +
-        s_extend_5d         * w["extend_5d"]      * 100
+        s_extend_5d         * w["extend_5d"]      * 100 +
+        s_turnover          * w["turnover"]       * 100
     ).round(2)
 
     def hit_desc(row):

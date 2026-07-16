@@ -89,6 +89,9 @@ def compute_daily_factors(hist: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     s_upper_shadow = (1 - upper_shadow / f["upper_shadow_max"]).clip(0, 1)
     s_extend_5d = (1 - extend_5d.clip(lower=0) / f["extend_5d_max"]).clip(0, 1)
 
+    # 换手率因子：历史日K线接口不返回换手率字段，回测中用中性值填充（与线上打分权重结构保持一致）
+    s_turnover = pd.Series(0.5, index=close.index)
+
     score = (
         s_change_pct.fillna(0) * w["change_pct"] * 100 +
         s_volume_ratio.fillna(0) * w["volume_ratio"] * 100 +
@@ -97,7 +100,8 @@ def compute_daily_factors(hist: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         f_ma_trend.fillna(0.5) * w["ma_trend"] * 100 +
         f_above_ma20.fillna(0.5) * w["above_ma20"] * 100 +
         f_vol_gt_ma5.fillna(0.5) * w["vol_gt_ma5"] * 100 +
-        s_extend_5d.fillna(0.5) * w["extend_5d"] * 100
+        s_extend_5d.fillna(0.5) * w["extend_5d"] * 100 +
+        s_turnover * w["turnover"] * 100
     )
 
     qualified = (f_change_pct == 1) & (f_volume_ratio == 1)
