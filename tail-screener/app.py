@@ -123,7 +123,7 @@ def _run_screener():
             [sys.executable, os.path.join(SCRIPTS_DIR, "run_screen.py")],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            text=True,
+            universal_newlines=True,
             cwd=ROOT,
         )
         for line in proc.stdout:
