@@ -15,17 +15,21 @@ factors:
   close_strength_min: 0.75
   upper_shadow_max: 2.0
   vol_gt_ma5_ratio: 1.0
-  extend_5d_max: 12
+  extend_5d_max: 6
 
+# 权重基于20日全市场回测的因子归因分析调整（2026-07-16）：
+# 5日累计涨幅是唯一被数据证实有区分度的因子（赢组均值4.29% vs 输组10.38%），大幅提权；
+# 站上MA20方向与假设相反（输组命中率97.1% > 赢组73.1%），权重归零；
+# 其余因子在该样本下区分度弱，保留小权重作为辅助排序，避免过拟合到单一因子
 weights:
   change_pct: 0.05
-  volume_ratio: 0.20
-  close_strength: 0.25
-  upper_shadow: 0.15
+  volume_ratio: 0.15
+  close_strength: 0.15
+  upper_shadow: 0.10
   ma_trend: 0.05
-  above_ma20: 0.05
+  above_ma20: 0.00
   vol_gt_ma5: 0.10
-  extend_5d: 0.10
+  extend_5d: 0.35
   turnover: 0.05
 
 feishu_webhook: ""
