@@ -102,6 +102,12 @@ def compute_daily_factors(hist: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
     out = hist.copy()
     out["change_pct"] = change_pct
+    out["volume_ratio"] = volume_ratio
+    out["close_strength"] = close_strength
+    out["upper_shadow"] = upper_shadow
+    out["extend_5d"] = extend_5d
+    out["above_ma20"] = f_above_ma20
+    out["ma_trend"] = f_ma_trend
     out["score"] = score
     out["qualified"] = qualified
     return out
@@ -179,6 +185,13 @@ def main():
                 "name": "",
                 "pick_price": float(r["收盘"]),
                 "score": float(r["score"]),
+                "change_pct": round(float(r["change_pct"]), 2) if pd.notna(r["change_pct"]) else None,
+                "volume_ratio": round(float(r["volume_ratio"]), 2) if pd.notna(r["volume_ratio"]) else None,
+                "close_strength": round(float(r["close_strength"]), 2) if pd.notna(r["close_strength"]) else None,
+                "upper_shadow": round(float(r["upper_shadow"]), 2) if pd.notna(r["upper_shadow"]) else None,
+                "extend_5d": round(float(r["extend_5d"]), 2) if pd.notna(r["extend_5d"]) else None,
+                "above_ma20": bool(r["above_ma20"]) if pd.notna(r["above_ma20"]) else None,
+                "ma_trend": bool(r["ma_trend"]) if pd.notna(r["ma_trend"]) else None,
             })
         if not rows:
             continue
@@ -213,6 +226,13 @@ def main():
                 "settle_price": settle_price,
                 "return_pct": return_pct,
                 "win": win,
+                "change_pct": p.get("change_pct"),
+                "volume_ratio": p.get("volume_ratio"),
+                "close_strength": p.get("close_strength"),
+                "upper_shadow": p.get("upper_shadow"),
+                "extend_5d": p.get("extend_5d"),
+                "above_ma20": p.get("above_ma20"),
+                "ma_trend": p.get("ma_trend"),
             })
         time.sleep(0.05)
 
@@ -233,6 +253,25 @@ def main():
     print("-" * 55)
     print(f"    TOP3整体成功率：{top3_stats['win_rate']}%（{top3_stats['wins']}/{top3_stats['total']}）")
     print(f"    首选成功率：    {top1_stats['win_rate']}%（{top1_stats['wins']}/{top1_stats['total']}）")
+
+    # 归因分析：对比赢/输两组在各因子上的均值差异，找出真正有区分度的信号
+    print("\n[6] 因子归因分析（赢组 vs 输组均值对比）")
+    print("-" * 55)
+    numeric_factors = ["change_pct", "volume_ratio", "close_strength", "upper_shadow", "extend_5d"]
+    wins_group = [r for r in settled_records if r["win"]]
+    loss_group = [r for r in settled_records if not r["win"]]
+    for factor in numeric_factors:
+        wv = [r[factor] for r in wins_group if r.get(factor) is not None]
+        lv = [r[factor] for r in loss_group if r.get(factor) is not None]
+        w_avg = round(sum(wv) / len(wv), 2) if wv else None
+        l_avg = round(sum(lv) / len(lv), 2) if lv else None
+        print(f"    {factor:16s}  赢组均值={w_avg}  输组均值={l_avg}")
+    for factor in ["above_ma20", "ma_trend"]:
+        wv = [r[factor] for r in wins_group if r.get(factor) is not None]
+        lv = [r[factor] for r in loss_group if r.get(factor) is not None]
+        w_rate = round(sum(wv) / len(wv) * 100, 1) if wv else None
+        l_rate = round(sum(lv) / len(lv) * 100, 1) if lv else None
+        print(f"    {factor:16s}  赢组命中率={w_rate}%  输组命中率={l_rate}%")
 
     result = {
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
