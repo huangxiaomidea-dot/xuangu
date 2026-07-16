@@ -161,7 +161,7 @@ def _run_algo_backtest():
     try:
         proc = subprocess.run(
             [sys.executable, os.path.join(SCRIPTS_DIR, "run_algo_backtest.py")],
-            cwd=ROOT, timeout=1800,
+            cwd=ROOT, timeout=10800,  # 全市场扫描耗时较长，放宽到3小时
         )
         _backtest_state["last_status"] = "success" if proc.returncode == 0 else "error"
     except Exception:

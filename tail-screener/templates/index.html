@@ -579,10 +579,10 @@ function runAlgoBacktest() {
 function renderBacktestPanel(state, data) {
   let html;
   if (state && state.running) {
-    html = '<span>⏳ 20日回测运行中，预计需要数分钟...</span>';
+    html = '<span>⏳ 全市场20日回测运行中，覆盖5000+只股票，预计需要30-60分钟，可关闭页面稍后回来查看...</span>';
   } else if (!data) {
     html = `
-      <span class="backtest-meta">📈 20日历史回测：尚未运行</span>
+      <span class="backtest-meta">📈 全市场20日历史回测：尚未运行</span>
       <button class="btn-backtest" onclick="runAlgoBacktest()">运行回测</button>`;
   } else {
     const mkStat = (label, s) => {

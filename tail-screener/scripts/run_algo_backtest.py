@@ -24,7 +24,6 @@ RESULT_FILE = os.path.join(ROOT, "notes", "algo_backtest.json")
 WIN_THRESHOLD_PCT = 0.1
 LOOKBACK_DAYS = 20        # 回测窗口（交易日）
 MA_WARMUP_DAYS = 25       # 为计算MA20等因子多拉的历史天数
-SAMPLE_STOCKS = 300       # 抽样股票数（兼顾速度与代表性）
 
 
 def load_config() -> dict:
@@ -32,20 +31,15 @@ def load_config() -> dict:
         return yaml.safe_load(f)
 
 
-def fetch_stock_list(max_stocks: int = SAMPLE_STOCKS) -> list:
-    sh_rows = fetcher._fetch_node_all("sh_a")
-    sz_rows = fetcher._fetch_node_all("sz_a")
-    symbols = []
-    for row in (sh_rows + sz_rows):
-        sym = str(row.get("symbol", "")).strip()
-        code = sym.replace("sh", "").replace("sz", "").replace("bj", "")
-        name = str(row.get("name", ""))
-        if not code or "ST" in name:
-            continue
-        if code.startswith(("688", "4", "8", "9")):
-            continue
-        symbols.append(code.zfill(6))
-    return symbols[:max_stocks]
+def fetch_stock_list() -> list:
+    """
+    全市场扫描：复用与实盘 run_screen.py 完全相同的候选股范围
+    （get_realtime_snapshot 已包含 ST 剔除、北交所/科创板剔除、市值50-500亿过滤）
+    """
+    snapshot = fetcher.get_realtime_snapshot()
+    if snapshot.empty:
+        return []
+    return snapshot["代码"].astype(str).str.zfill(6).tolist()
 
 
 def compute_daily_factors(hist: pd.DataFrame, cfg: dict) -> pd.DataFrame:
@@ -147,7 +141,7 @@ def main():
 
     cfg = load_config()
 
-    print(f"\n[1] 获取股票列表（样本 {SAMPLE_STOCKS} 只）...")
+    print("\n[1] 获取全市场候选股列表（与实盘选股范围一致）...")
     symbols = fetch_stock_list()
     print(f"    共 {len(symbols)} 只")
 
