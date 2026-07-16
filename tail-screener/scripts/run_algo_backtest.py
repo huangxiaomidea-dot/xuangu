@@ -1,5 +1,5 @@
 """
-20日历史回测 —— 用当前选股规则逐日复现历史TOP3，并用次日9:30-9:40开盘窗口结算
+20日历史回测 —— 用当前选股规则逐日复现历史TOP3，并用次日9:30-9:35开盘窗口结算
 结果写入 notes/algo_backtest.json，供前端展示，可重复运行以滚动刷新（自动使用最新20个交易日）
 
 用法：cd tail-screener && python scripts/run_algo_backtest.py
@@ -108,7 +108,7 @@ def compute_daily_factors(hist: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
 
 def find_open_window(sym: str, pick_date, minute_cache: dict):
-    """用5分钟K线找次日9:30-9:40窗口的最高价与收盘价"""
+    """用5分钟K线找次日9:30-9:35窗口的最高价与收盘价"""
     if sym not in minute_cache:
         minute_cache[sym] = fetcher.get_intraday_5min(sym, datalen=2000)
     df = minute_cache[sym]
@@ -121,7 +121,7 @@ def find_open_window(sym: str, pick_date, minute_cache: dict):
     window = later[
         (later["时间"].dt.date == next_date) &
         (later["时间"].dt.time >= dtime(9, 30)) &
-        (later["时间"].dt.time <= dtime(9, 40))
+        (later["时间"].dt.time <= dtime(9, 35))
     ]
     if window.empty:
         return None
@@ -135,7 +135,7 @@ def find_open_window(sym: str, pick_date, minute_cache: dict):
 
 def main():
     print("=" * 55)
-    print("=== 20日历史回测（当前算法 + 次日9:30-9:40开盘窗口结算）===")
+    print("=== 20日历史回测（当前算法 + 次日9:30-9:35开盘窗口结算）===")
     print(f"=== 运行时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
     print("=" * 55)
 
@@ -191,7 +191,7 @@ def main():
     total_signals = sum(len(dp["picks"]) for dp in daily_picks)
     print(f"    共 {len(daily_picks)} 个交易日产生信号，累计 {total_signals} 条TOP3记录")
 
-    print("\n[4] 用5分钟K线结算次日9:30-9:40开盘窗口...")
+    print("\n[4] 用5分钟K线结算次日9:30-9:35开盘窗口...")
     minute_cache = {}
     settled_records = []
     for dp in daily_picks:
@@ -202,7 +202,7 @@ def main():
                 continue
             threshold = p["pick_price"] * (1 + WIN_THRESHOLD_PCT / 100)
             win = info["high"] >= threshold
-            settle_price = info["high"] if win else info["close"]
+            settle_price = info["close"]  # 赢/输统一用窗口收盘价，避免不对称虚高/虚低收益
             return_pct = round((settle_price - p["pick_price"]) / p["pick_price"] * 100, 2)
             settled_records.append({
                 "date": dp["date"],

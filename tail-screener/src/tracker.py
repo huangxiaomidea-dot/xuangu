@@ -1,7 +1,9 @@
 """
 滚动复盘模块
-每次选股后记录 TOP3（含排名）为待结算记录；结算时机改为监控次日 9:30-9:40
-开盘窗口，只要期间涨幅摸到 pick_price 的 +0.1% 即算成功（win）。
+每次选股后记录 TOP3（含排名）为待结算记录；结算时机改为监控次日 9:30-9:35
+开盘窗口。是否算"赢"（win）看窗口内最高价是否摸到 pick_price 的 +0.1%；
+但 return_pct（收益率）统一用窗口收盘价计算（赢/输同一基准，避免赢用最高价、
+输用收盘价的不对称算法导致平均收益虚低）。
 分别统计：① TOP3 整体成功率  ② 排名第1（首选）单独成功率
 结果持久化到 notes/track_record.json
 """
@@ -59,7 +61,7 @@ def record_picks(top3_df: pd.DataFrame, date_str: str):
 
 def _find_open_window_result(symbol: str, pick_date_str: str):
     """
-    在 pick_date 之后最近一个有分钟数据的交易日，取 9:30-9:40 窗口内的
+    在 pick_date 之后最近一个有分钟数据的交易日，取 9:30-9:35 窗口内的
     最高价与收盘价。返回 {settle_date, high, close} 或 None（数据尚未产生）
     """
     df = fetcher.get_intraday_5min(symbol)
@@ -75,7 +77,7 @@ def _find_open_window_result(symbol: str, pick_date_str: str):
     window = later[
         (later["时间"].dt.date == next_date) &
         (later["时间"].dt.time >= dtime(9, 30)) &
-        (later["时间"].dt.time <= dtime(9, 40))
+        (later["时间"].dt.time <= dtime(9, 35))
     ]
     if window.empty:
         return None
@@ -90,7 +92,9 @@ def _find_open_window_result(symbol: str, pick_date_str: str):
 
 def settle_pending_open_window() -> list:
     """
-    结算所有待结算记录：用次日9:30-9:40开盘窗口涨幅判断成功/失败。
+    结算所有待结算记录：用次日9:30-9:35开盘窗口判断成功/失败与实际收益。
+    - win（是否成功）：窗口内最高价是否摸到 pick_price 的 +0.1%
+    - return_pct（收益率）：统一用窗口收盘价计算，赢/输同一基准，不做区分
     若次日分钟数据尚未产生，跳过，留待下次结算。
     返回本次新结算的记录列表
     """
@@ -110,7 +114,7 @@ def settle_pending_open_window() -> list:
         threshold_price = pick_price * (1 + WIN_THRESHOLD_PCT / 100)
         win = info["high"] >= threshold_price
 
-        settle_price = info["high"] if win else info["close"]
+        settle_price = info["close"]  # 赢/输统一用窗口收盘价，避免不对称虚高/虚低收益
         return_pct = round((settle_price - pick_price) / pick_price * 100, 2)
 
         rec["settled"] = True
@@ -122,7 +126,7 @@ def settle_pending_open_window() -> list:
 
     if newly_settled:
         _save(records)
-        print(f"[tracker] 结算 {len(newly_settled)} 条待结算记录（次日9:30-9:40开盘窗口）")
+        print(f"[tracker] 结算 {len(newly_settled)} 条待结算记录（次日9:30-9:35开盘窗口）")
     else:
         print("[tracker] 本次无可结算记录（可能次日分钟数据尚未产生）")
 
@@ -161,7 +165,7 @@ def format_rolling_summary(newly_settled: list) -> str:
     lines = []
 
     if newly_settled:
-        lines.append("最新结算（9:30-9:40开盘窗口涨幅>0.1%算成功）：")
+        lines.append("最新结算（9:30-9:35开盘窗口摸到+0.1%算成功，收益按窗口收盘价计算）：")
         for rec in sorted(newly_settled, key=lambda r: r["rank"]):
             mark = "✅" if rec["win"] else "❌"
             tag = "【首选】" if rec["rank"] == 1 else ""

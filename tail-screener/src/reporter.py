@@ -32,7 +32,7 @@ def generate_report(top_df: pd.DataFrame, date_str: str = None, newly_settled: l
 
     top3_stats = tracker.cumulative_stats()
     top1_stats = tracker.cumulative_stats(rank_filter=1)
-    lines.append("> 结算规则：次日 9:30-9:40 开盘窗口内涨幅摸到 +0.1% 即算成功  ")
+    lines.append("> 结算规则：次日 9:30-9:35 开盘窗口内涨幅摸到 +0.1% 即算成功，收益按窗口收盘价计算  ")
     lines.append("")
     if newly_settled:
         lines.append("**最新结算：**")
@@ -134,7 +134,7 @@ def push_serverchan(send_key: str, top_df: pd.DataFrame, date_str: str = None, n
 
     title = f"📊 {date_str} 尾盘选股 TOP3 出炉"
 
-    rows = ["### 🔁 滚动复盘（次日9:30-9:40摸到+0.1%算成功）", ""]
+    rows = ["### 🔁 滚动复盘（次日9:30-9:35摸到+0.1%算成功）", ""]
     top3_stats = tracker.cumulative_stats()
     top1_stats = tracker.cumulative_stats(rank_filter=1)
     if newly_settled:
