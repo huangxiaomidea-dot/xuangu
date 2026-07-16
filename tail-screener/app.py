@@ -144,6 +144,32 @@ def _run_screener():
         _log_queue.put("__DONE__")
 
 
+# 20日回测状态（独立于选股运行状态，可能耗时较久）
+_backtest_state = {
+    "running": False,
+    "last_run": None,
+    "last_status": "idle",  # idle | running | success | error
+}
+
+
+def _run_algo_backtest():
+    """在子线程中运行20日历史回测脚本"""
+    global _backtest_state
+    _backtest_state["running"] = True
+    _backtest_state["last_status"] = "running"
+    _backtest_state["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "run_algo_backtest.py")],
+            cwd=ROOT, timeout=1800,
+        )
+        _backtest_state["last_status"] = "success" if proc.returncode == 0 else "error"
+    except Exception:
+        _backtest_state["last_status"] = "error"
+    finally:
+        _backtest_state["running"] = False
+
+
 # ── 路由 ────────────────────────────────────────────────────
 
 @app.route("/")
@@ -246,6 +272,30 @@ def api_track():
         "stats_top1": stats_top1,
         "recent": settled,
     })
+
+
+@app.route("/api/algo-backtest")
+def api_algo_backtest():
+    """返回20日历史回测结果（若已生成）与当前运行状态"""
+    result_path = os.path.join(NOTES_DIR, "algo_backtest.json")
+    data = None
+    if os.path.exists(result_path):
+        try:
+            with open(result_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = None
+    return jsonify({"ok": True, "state": _backtest_state, "data": data})
+
+
+@app.route("/api/algo-backtest/run", methods=["POST"])
+def api_algo_backtest_run():
+    """启动20日历史回测（后台运行，耗时较久，通过 /api/algo-backtest 轮询结果）"""
+    if _backtest_state["running"]:
+        return jsonify({"ok": False, "msg": "回测正在运行中，请稍候"})
+    t = threading.Thread(target=_run_algo_backtest, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "msg": "回测已启动，预计需要数分钟"})
 
 
 if __name__ == "__main__":

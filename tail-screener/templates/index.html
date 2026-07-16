@@ -132,6 +132,15 @@ header .meta { color: var(--muted); font-size: 11px; }
 .track-chip.win  { color: var(--red); }
 .track-chip.loss { color: var(--green); }
 
+/* 20日历史回测面板 */
+.track-panel.backtest { background: var(--surface2); border-bottom: 1px solid var(--border); }
+.btn-backtest {
+  font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  background: var(--accent); color: #fff; border: none; white-space: nowrap;
+}
+.btn-backtest:disabled { opacity: .5; cursor: not-allowed; }
+.backtest-meta { font-size: 11px; color: var(--muted); }
+
 /* 报告标题 */
 .report-date { font-size: 18px; font-weight: 700; margin-bottom: 16px;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -293,6 +302,7 @@ tbody tr:hover td { background: var(--surface2); }
       <div class="last-run" id="last-run-m"></div>
     </div>
     <div id="track-panel-m" class="track-panel"></div>
+    <div id="backtest-panel-m" class="track-panel backtest"></div>
     <div style="padding:16px" id="result-area-m">
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
@@ -341,6 +351,7 @@ tbody tr:hover td { background: var(--surface2); }
       <div class="last-run" id="last-run-time"></div>
     </div>
     <div id="track-panel" class="track-panel"></div>
+    <div id="backtest-panel" class="track-panel backtest"></div>
     <div class="result-area" id="result-area">
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
@@ -558,6 +569,59 @@ function pollTrack() {
   }).catch(()=>{});
 }
 
+// 20日历史回测面板
+function runAlgoBacktest() {
+  fetch('/api/algo-backtest/run', {method:'POST'}).then(r=>r.json()).then(j=>{
+    pollBacktest();
+  });
+}
+
+function renderBacktestPanel(state, data) {
+  let html;
+  if (state && state.running) {
+    html = '<span>⏳ 20日回测运行中，预计需要数分钟...</span>';
+  } else if (!data) {
+    html = `
+      <span class="backtest-meta">📈 20日历史回测：尚未运行</span>
+      <button class="btn-backtest" onclick="runAlgoBacktest()">运行回测</button>`;
+  } else {
+    const mkStat = (label, s) => {
+      if (!s || s.total === 0) {
+        return `<div class="track-stat"><span class="tv-label">${label}</span><span class="tv-value">--</span></div>`;
+      }
+      const cls = s.win_rate >= 55 ? 'up' : 'down';
+      return `<div class="track-stat">
+        <span class="tv-label">${label}（${s.wins}/${s.total}）</span>
+        <span class="tv-value ${cls}">${s.win_rate}%</span>
+      </div>`;
+    };
+    html = `<span class="backtest-meta">📈 近${data.lookback_days}日回测（${data.generated_at}，样本${data.sample_stocks}只）</span>` +
+      mkStat('TOP3成功率', data.top3_stats) + mkStat('首选成功率', data.top1_stats) +
+      `<button class="btn-backtest" onclick="runAlgoBacktest()" style="margin-left:auto">重新回测</button>`;
+  }
+  ['backtest-panel','backtest-panel-m'].forEach(id=>{
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  });
+}
+
+let _backtestPolling = false;
+function pollBacktest() {
+  fetch('/api/algo-backtest').then(r=>r.json()).then(j=>{
+    if (!j.ok) return;
+    renderBacktestPanel(j.state, j.data);
+    if (j.state && j.state.running && !_backtestPolling) {
+      _backtestPolling = true;
+      const timer = setInterval(() => {
+        fetch('/api/algo-backtest').then(r=>r.json()).then(jj=>{
+          renderBacktestPanel(jj.state, jj.data);
+          if (!jj.state.running) { clearInterval(timer); _backtestPolling = false; }
+        });
+      }, 8000);
+    }
+  }).catch(()=>{});
+}
+
 // SSE 日志
 function subscribeLog() {
   if (evtSource) evtSource.close();
@@ -594,6 +658,7 @@ function runScreener() {
 (function init(){
   pollStatus();
   pollTrack();
+  pollBacktest();
   setInterval(pollStatus, 5000);
   setInterval(pollTrack, 30000);
   setInterval(()=>{
