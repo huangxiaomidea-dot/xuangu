@@ -20,32 +20,40 @@ _HIST_URL = ("https://money.finance.sina.com.cn/quotes_service/api/json_v2.php"
              "/CN_MarketData.getKLineData")
 
 
-def _fetch_node_all(node: str, page_size: int = 200) -> list:
+def _fetch_node_all(node: str, page_size: int = 100) -> list:
+    """
+    新浪接口实际上每次最多返回100条（不受 num 参数请求更大值影响），
+    必须持续翻页直到成功请求返回空数组为止，不能用"返回数 < 请求数"来判断是否翻完
+    （曾导致误判第1页为最后一页，全市场只拿到200只股票的严重bug）
+    """
     all_rows = []
     page = 1
     while True:
         params = {"page": page, "num": page_size, "sort": "symbol", "asc": 1, "node": node}
+        rows = None  # None=请求彻底失败；[]=请求成功但确实没数据了（翻页结束）
         for attempt in range(3):
             try:
                 resp = requests.get(_SNAPSHOT_URL, params=params, headers=_HEADERS, timeout=15)
                 resp.raise_for_status()
-                rows = resp.json()
-                if not isinstance(rows, list):
-                    rows = []
+                data = resp.json()
+                rows = data if isinstance(data, list) else []
                 break
             except Exception as e:
                 print(f"[fetcher] {node} 第{page}页失败({attempt+1}): {e}")
                 if attempt < 2:
                     time.sleep(2)
-                else:
-                    rows = []
-        if not rows:
+
+        if rows is None:
+            print(f"[fetcher] {node} 第{page}页重试3次仍失败，提前终止翻页（已获取{len(all_rows)}只）")
             break
+        if not rows:  # 成功请求但空数组，说明真的翻完了
+            break
+
         all_rows.extend(rows)
-        if len(rows) < page_size:
-            break
         page += 1
         time.sleep(0.15)
+        if page > 100:  # 安全阀，避免异常情况下死循环（沪深A股各不超过100*100=1万只）
+            break
     return all_rows
 
 
