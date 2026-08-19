@@ -37,13 +37,19 @@ def _save(records: list):
 
 
 def record_picks(top3_df: pd.DataFrame, date_str: str):
-    """将今日 TOP3（含排名）记为待结算"""
+    """
+    将今日 TOP3（含排名）记为待结算。附带 picked_at 完整时间戳，
+    用于同一天多次运行（14:40+14:50自动运行、手动点击）时，
+    展示"最近记录"能只取最新一次运行的结果，不会把多次运行堆在一起显示
+    """
     if top3_df.empty:
         return
     records = _load()
+    picked_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for rank, (_, row) in enumerate(top3_df.iterrows(), start=1):
         records.append({
             "date": date_str,
+            "picked_at": picked_at,
             "rank": rank,
             "code": str(row.get("代码", "")).zfill(6),
             "name": row.get("名称", ""),
@@ -156,6 +162,27 @@ def cumulative_stats(rank_filter: int = None) -> dict:
         "win_rate": round(wins / total * 100, 1),
         "avg_return": avg_return,
     }
+
+
+def recent_settled(limit: int = 10) -> list:
+    """
+    最近结算记录，用于前端展示。同一天可能有多次运行（14:40+14:50自动运行、
+    手动点击），这里按 date 分组，每个日期只保留 picked_at 最新一次运行的记录，
+    避免同一天多次运行的选股堆在一起重复展示
+    """
+    records = _load()
+    settled = [r for r in records if r.get("settled")]
+
+    latest_picked_at = {}
+    for r in settled:
+        d = r.get("date")
+        pa = r.get("picked_at") or ""
+        if pa >= latest_picked_at.get(d, ""):
+            latest_picked_at[d] = pa
+    dedup = [r for r in settled if (r.get("picked_at") or "") == latest_picked_at.get(r.get("date"))]
+
+    dedup.sort(key=lambda r: (r.get("settle_date") or "", r.get("rank") or 0), reverse=True)
+    return dedup[:limit]
 
 
 def format_rolling_summary(newly_settled: list) -> str:

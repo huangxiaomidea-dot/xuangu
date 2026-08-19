@@ -272,17 +272,11 @@ def api_track():
     """返回滚动复盘累计成功率（TOP3整体 + 首选）与最近结算记录"""
     stats_top3 = tracker.cumulative_stats()
     stats_top1 = tracker.cumulative_stats(rank_filter=1)
-    records = tracker._load()
-    settled = sorted(
-        [r for r in records if r.get("settled")],
-        key=lambda r: r.get("settle_date") or "",
-        reverse=True,
-    )[:10]
     return jsonify({
         "ok": True,
         "stats_top3": stats_top3,
         "stats_top1": stats_top1,
-        "recent": settled,
+        "recent": tracker.recent_settled(10),
     })
 
 
