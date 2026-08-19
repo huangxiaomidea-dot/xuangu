@@ -312,7 +312,7 @@ def api_algo_backtest_run():
 
 @app.route("/api/tomorrow-events", methods=["POST"])
 def api_tomorrow_events():
-    """预测明日大概率发生、对A股影响最大的10条消息（调用Claude API联网生成，仅供参考）"""
+    """预测明日大概率发生、对A股影响最大的10条消息（调用智谱GLM API联网生成，仅供参考）"""
     from src import predictor
     result = predictor.predict_tomorrow_events()
     return jsonify(result)

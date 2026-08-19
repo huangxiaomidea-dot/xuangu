@@ -1,14 +1,16 @@
 """
-明日重要事项预测 —— 调用 Claude API（带联网搜索）梳理当前信息面，
+明日重要事项预测 —— 调用智谱GLM API（自带联网搜索）梳理当前信息面，
 生成对A股影响最大的10条大概率事件，仅供参考，不构成投资建议
 """
 
 import os
 import re
 import json
+import requests
 from datetime import datetime, timedelta
 
-_MODEL = "claude-sonnet-4-5-20250929"
+_ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+_MODEL = "glm-4-plus"
 
 _PROMPT_TEMPLATE = """你是一名专注于A股市场的资深财经分析师。今天是{today}（{weekday}）。
 
@@ -42,14 +44,9 @@ def _extract_json_array(text: str):
 
 
 def predict_tomorrow_events() -> dict:
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    api_key = os.environ.get("ZHIPU_API_KEY", "").strip()
     if not api_key:
-        return {"ok": False, "msg": "服务器未配置 ANTHROPIC_API_KEY"}
-
-    try:
-        from anthropic import Anthropic
-    except ImportError:
-        return {"ok": False, "msg": "未安装 anthropic 依赖，请先 pip install anthropic"}
+        return {"ok": False, "msg": "服务器未配置 ZHIPU_API_KEY"}
 
     now = datetime.now()
     tomorrow = now + timedelta(days=1)
@@ -60,18 +57,26 @@ def predict_tomorrow_events() -> dict:
         tomorrow=tomorrow.strftime("%Y-%m-%d"),
     )
 
+    payload = {
+        "model": _MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "tools": [{"type": "web_search", "web_search": {"search_result": True}}],
+        "temperature": 0.4,
+    }
+
     try:
-        client = Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=_MODEL,
-            max_tokens=4000,
-            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}],
-            messages=[{"role": "user", "content": prompt}],
+        resp = requests.post(
+            _ZHIPU_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=60,
         )
-        text = "".join(
-            block.text for block in resp.content
-            if getattr(block, "type", None) == "text"
-        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
         events = _extract_json_array(text)
         if not isinstance(events, list):
             raise ValueError("模型未返回数组")

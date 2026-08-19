@@ -3,4 +3,3 @@ numpy
 pyyaml
 requests
 flask
-anthropic
