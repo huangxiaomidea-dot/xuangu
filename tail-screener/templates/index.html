@@ -144,6 +144,50 @@ header .meta { color: var(--muted); font-size: 11px; }
 .btn-backtest:disabled { opacity: .5; cursor: not-allowed; }
 .backtest-meta { font-size: 11px; color: var(--muted); }
 
+/* 明日事项预测按钮 + 弹窗 */
+.btn-events {
+  font-size: 11px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  white-space: nowrap; margin-left: auto;
+}
+.btn-events:hover { border-color: var(--accent); color: var(--accent); }
+.events-modal-mask {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  z-index: 1000; align-items: center; justify-content: center; padding: 20px;
+}
+.events-modal-mask.open { display: flex; }
+.events-modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: 100%; max-width: 640px; max-height: 82vh; display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.events-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 15px;
+}
+.events-modal-close {
+  background: none; border: none; color: var(--muted); font-size: 16px; cursor: pointer; padding: 4px;
+}
+.events-modal-close:hover { color: var(--text); }
+.events-modal-body { padding: 16px 18px; overflow-y: auto; }
+.events-disclaimer {
+  font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.6;
+  background: var(--surface2); border-radius: 8px; padding: 10px 12px;
+}
+.event-card {
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+}
+.event-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.event-rank { font-size: 11px; color: var(--muted); font-weight: 700; }
+.event-title { font-weight: 700; font-size: 13.5px; flex: 1; }
+.event-impact { font-size: 11px; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
+.event-impact.up   { background: rgba(220,50,50,.15); color: var(--red); }
+.event-impact.down { background: rgba(30,160,90,.15); color: var(--green); }
+.event-impact.neutral { background: var(--surface2); color: var(--muted); }
+.event-desc { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.event-sectors { font-size: 11px; color: var(--accent); margin-top: 4px; }
+.events-loading, .events-error { text-align: center; padding: 40px 10px; color: var(--muted); font-size: 13px; }
+
 /* 报告标题 */
 .report-date { font-size: 18px; font-weight: 700; margin-bottom: 16px;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -303,6 +347,7 @@ tbody tr:hover td { background: var(--surface2); }
         <span id="status-text-m">空闲</span>
       </div>
       <div class="last-run" id="last-run-m"></div>
+      <button class="btn-events" onclick="openTomorrowEvents()">🔮 预测明日事项</button>
     </div>
     <div id="track-panel-m" class="track-panel"></div>
     <div id="backtest-panel-m" class="track-panel backtest"></div>
@@ -352,6 +397,7 @@ tbody tr:hover td { background: var(--surface2); }
         <span id="status-text">空闲</span>
       </div>
       <div class="last-run" id="last-run-time"></div>
+      <button class="btn-events" onclick="openTomorrowEvents()">🔮 预测明日重要事项</button>
     </div>
     <div id="track-panel" class="track-panel"></div>
     <div id="backtest-panel" class="track-panel backtest"></div>
@@ -373,6 +419,16 @@ tbody tr:hover td { background: var(--surface2); }
 </div>
 
 </div><!-- .app -->
+
+<div class="events-modal-mask" id="events-modal-mask" onclick="if(event.target===this) closeTomorrowEvents()">
+  <div class="events-modal">
+    <div class="events-modal-header">
+      <span>🔮 明日重要事项预测</span>
+      <button class="events-modal-close" onclick="closeTomorrowEvents()">✕</button>
+    </div>
+    <div class="events-modal-body" id="events-modal-body"></div>
+  </div>
+</div>
 
 <script>
 let currentReport = null;
@@ -582,6 +638,41 @@ function pollTrack() {
   fetch('/api/track').then(r=>r.json()).then(j=>{
     if (j.ok) renderTrackPanel(j.stats_top3, j.stats_top1, j.recent);
   }).catch(()=>{});
+}
+
+// 明日重要事项预测弹窗
+function openTomorrowEvents() {
+  const mask = document.getElementById('events-modal-mask');
+  const body = document.getElementById('events-modal-body');
+  mask.classList.add('open');
+  body.innerHTML = '<div class="events-loading">🔮 正在梳理信息面，联网检索中，大约需要10-30秒...</div>';
+
+  fetch('/api/tomorrow-events', {method:'POST'}).then(r=>r.json()).then(j=>{
+    if (!j.ok) {
+      body.innerHTML = `<div class="events-error">生成失败：${j.msg||'未知错误'}</div>`;
+      return;
+    }
+    const impactCls = x => x==='利好' ? 'up' : (x==='利空' ? 'down' : 'neutral');
+    const cards = (j.events||[]).map((e,i)=>`
+      <div class="event-card">
+        <div class="event-card-head">
+          <span class="event-rank">${i+1}</span>
+          <span class="event-title">${e.title||''}</span>
+          <span class="event-impact ${impactCls(e.impact)}">${e.impact||'中性'}</span>
+        </div>
+        <div class="event-desc">${e.desc||''}</div>
+        ${e.sectors ? `<div class="event-sectors">📌 ${e.sectors}</div>` : ''}
+      </div>`).join('');
+    body.innerHTML = `
+      <div class="events-disclaimer">⚠️ 以上内容由AI基于公开信息面合理推测生成，用于${j.target_date||''}的参考，不代表已确认发生，不构成投资建议。生成时间：${j.generated_at||''}</div>
+      ${cards || '<div class="events-error">未生成有效内容</div>'}`;
+  }).catch(e=>{
+    body.innerHTML = `<div class="events-error">请求失败：${e}</div>`;
+  });
+}
+
+function closeTomorrowEvents() {
+  document.getElementById('events-modal-mask').classList.remove('open');
 }
 
 // 20日历史回测面板
