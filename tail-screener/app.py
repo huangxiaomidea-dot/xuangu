@@ -306,9 +306,18 @@ def api_algo_backtest_run():
 
 @app.route("/api/tomorrow-events", methods=["POST"])
 def api_tomorrow_events():
-    """预测明日大概率发生、对A股影响最大的10条消息（调用智谱GLM API联网生成，仅供参考）"""
+    """针对今日TOP3个股，各预测3条明日相关事件（调用智谱GLM API联网生成，仅供参考）"""
     from src import predictor
-    result = predictor.predict_tomorrow_events()
+    reports = _list_reports()
+    if not reports:
+        return jsonify({"ok": False, "msg": "暂无今日选股报告，无法预测相关事件"})
+    md_path = os.path.join(NOTES_DIR, f"{reports[0]}.md")
+    latest = _parse_report_md(md_path)
+    companies = [
+        {"code": r["code"], "name": r["name"]}
+        for r in latest.get("top3", [])[:3]
+    ]
+    result = predictor.predict_company_events(companies)
     return jsonify(result)
 
 
